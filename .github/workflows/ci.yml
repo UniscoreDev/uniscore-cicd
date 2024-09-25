@@ -91,22 +91,6 @@ jobs:
     needs: [init, prepare]
     timeout-minutes: 60
     steps:
-      # - name: Checkout
-      #   uses: actions/checkout@v4
-      #   with:
-      #     repository: ${{ env.MAIN_REPO }}
-      #     token: ${{ secrets.GH_TOKEN }}
-      #     ref: ${{ github.event.client_payload.ref_name}}
-      # - name: Clone the GitLab repository
-      #   run: |
-      #     git clone https://oauth2:$GITLAB_TOKEN@gitlab.com/unity1185445/uniscore-mobile.git
-      #     cd uniscore-mobile
-      #     git checkout feature/nguyenphp/config-cicd
-      #     echo "Cloning GitLab repository and checking out branch feature/nguyenphp/config-cicd..."
-      # Step 2: Install Git (if not already installed)
-      - name: Install Git
-        run: sudo apt-get install -y git
-
       # Step 3: Clone the GitLab repository manually using git
       - name: Clone GitLab repository
         run: |
