@@ -6,12 +6,18 @@ on:
     tags:
       - "*"
 env:
+  LC_ALL: en_US.UTF-8
+  LANG: en_US.UTF-8
+  P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
   GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
   MAIN_REPO: ${{ secrets.MAIN_REPO }}
 jobs:
   prepare:
     runs-on: macos-14
-
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.value }}
+      message-information: ${{ steps.get-message-information.outputs.value }}
+      env: ${{ steps.set-env.outputs.value }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -23,6 +29,18 @@ jobs:
             MATRIX="[{\"format\":\"IPA\",\"name\":\"macos-14\",\"platform\":\"IOS\"},{\"format\":\"APK\",\"name\":\"ubuntu-22.04\",\"platform\":\"ANDROID\"},{\"format\":\"AAB\",\"name\":\"ubuntu-22.04\",\"platform\":\"ANDROID\"}]"
           fi
           echo "value=$MATRIX" >> $GITHUB_OUTPUT
+
+      - name: Set env
+        id: set-env
+        run: |
+          ENV='dev'
+          if [[ "$REF_NAME" =~ "prd" ]]; then
+            ENV='prd'
+          elif [[ "$REF_NAME" =~ "stg" ]]; then
+            ENV='stg'
+          fi
+          echo "value=$ENV" >> $GITHUB_OUTPUT
+
       - name: Clone the GitLab repository
         run: |
           git clone https://oauth2:$GITLAB_TOKEN@gitlab.com/unity1185445/uniscore-mobile.git
