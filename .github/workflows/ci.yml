@@ -1,0 +1,151 @@
+name: Multi-Step Workflow
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "*"
+env:
+  GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+  MAIN_REPO: ${{ secrets.MAIN_REPO }}
+jobs:
+  prepare:
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set matrix
+        id: set-matrix
+        run: |
+          MATRIX="[{\"format\":\"IPA\",\"name\":\"macos-14\",\"platform\":\"IOS\"},{\"format\":\"APK\",\"name\":\"ubuntu-22.04\",\"platform\":\"ANDROID\"}]"
+          if [[ "$REF_NAME" =~ "prd" ]]; then
+            MATRIX="[{\"format\":\"IPA\",\"name\":\"macos-14\",\"platform\":\"IOS\"},{\"format\":\"APK\",\"name\":\"ubuntu-22.04\",\"platform\":\"ANDROID\"},{\"format\":\"AAB\",\"name\":\"ubuntu-22.04\",\"platform\":\"ANDROID\"}]"
+          fi
+          echo "value=$MATRIX" >> $GITHUB_OUTPUT
+      - name: Clone the GitLab repository
+        run: |
+          git clone https://oauth2:$GITLAB_TOKEN@gitlab.com/unity1185445/uniscore-mobile.git
+          cd uniscore-mobile
+          echo "Cloning GitLab repository..."
+
+      - name: Setup Node v18
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+      - name: Cache node_modules
+        id: cache-node-modules
+        uses: actions/cache@v4
+        with:
+          path: uniscore-mobile/node_modules
+          key: android-cache-node-modules
+          lookup-only: true
+      - name: Run yarn install
+        # uses: borales/actions-yarn@v5
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: |
+          cd uniscore-mobile
+          yarn install --network-concurrency 1
+
+      - name: Run tests
+        run: echo "Testing..."
+
+  deploy:
+    name: Deployment ${{ matrix.format }}
+    continue-on-error: true
+    # strategy:
+    #   fail-fast: true
+    #   matrix:
+    #     include: ${{ fromJson(needs.init.outputs.matrix) }}
+    runs-on: ubuntu-22.04
+    needs: [prepare]
+    timeout-minutes: 60
+    steps:
+      # - name: Checkout
+      #   uses: actions/checkout@v4
+      #   with:
+      #     repository: ${{ env.MAIN_REPO }}
+      #     token: ${{ secrets.GH_TOKEN }}
+      #     ref: ${{ github.event.client_payload.ref_name}}
+      # - name: Clone the GitLab repository
+      #   run: |
+      #     git clone https://oauth2:$GITLAB_TOKEN@gitlab.com/unity1185445/uniscore-mobile.git
+      #     cd uniscore-mobile
+      #     git checkout feature/nguyenphp/config-cicd
+      #     echo "Cloning GitLab repository and checking out branch feature/nguyenphp/config-cicd..."
+      # Step 2: Install Git (if not already installed)
+      - name: Install Git
+        run: sudo apt-get install -y git
+
+      # Step 3: Clone the GitLab repository manually using git
+      - name: Clone GitLab repository
+        run: |
+          git clone https://oauth2:$GITLAB_TOKEN@gitlab.com/unity1185445/uniscore-mobile.git
+          cd uniscore-mobile
+          git checkout feature/nguyenphp/config-cicd
+
+      # # Step 4: Move all files from the cloned GitLab repository to the root directory (./)
+      # - name: Move files to root
+      #   run: |
+      #     mv uniscore-mobile/* ./
+      #     mv uniscore-mobile/.[!.]* ./
+      #     rm -rf uniscore-mobile
+      - name: Setup ruby 3.2.2
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.2.2"
+          bundler-cache: true
+      - name: Bundle install
+        working-directory: uniscore-mobile
+        run: bundle install
+      - name: Setup Node v18
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        # if: matrix.platform == 'ANDROID'
+        with:
+          java-version: "17"
+          distribution: "temurin"
+          # cache: "gradle"
+
+      - name: Setup Android SDK
+        # if: matrix.platform == 'ANDROID'
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        # if: matrix.platform == 'ANDROID'
+        with:
+          ndk-version: r26c
+
+      - name: Cache node_modules
+        id: cache-node-modules
+        uses: actions/cache@v4
+        with:
+          path: uniscore-mobile/node_modules
+          key: android-cache-node-modules
+
+      # - name: Select Xcode
+      #   # if: matrix.platform == 'IOS'
+      #   uses: maxim-lobanov/setup-xcode@v1
+      #   with:
+      #     xcode-version: "15.3"
+      - name: Build APK
+        # if: matrix.format == 'APK'
+        working-directory: uniscore-mobile
+        run: yarn build:dev:apk
+      - name: Deploy apk
+        working-directory: uniscore-mobile
+        run: bundle exec fastlane android beta
+      # - name: Deploy APK to firebase
+      #   # if: matrix.format == 'APK'
+      #   uses: maierj/fastlane-action@v3.1.0
+      #   with:
+      #     lane: android beta
+      # - name: Build AAB
+      #   # if: matrix.format == 'AAB'
+      #   working-directory: uniscore-mobile
+      #   run: yarn b:dev-abb
