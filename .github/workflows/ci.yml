@@ -176,6 +176,7 @@ jobs:
           restore-keys: xcode-cache-deriveddata-${{ needs.init.outputs.env }}-
       - name: Install certificate and provision
         if: matrix.platform == 'IOS'
+        working-directory: uniscore-mobile
         run: bash .github/scripts/install_cert_and_provision.sh
 
       - name: Link Node (/usr/local/bin/node)
