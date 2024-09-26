@@ -159,8 +159,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ios/Pods
-            ios/Podfile.lock
+            uniscore-mobile/ios/Pods
+            uniscore-mobile/ios/Podfile.lock
           key: cache-pods-${{ hashFiles('yarn.lock') }}
 
       - name: Pod install
