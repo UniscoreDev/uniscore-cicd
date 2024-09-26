@@ -184,7 +184,7 @@ jobs:
         run: ln -s $(command -v node) /usr/local/bin/node
 
       - name: Build IPA
-        if: matrix.format == 'IOS'
+        if: matrix.format == 'IPA'
         working-directory: uniscore-mobile
         run: bundle exec fastlane ios ipa
       # - name: Deploy apk
