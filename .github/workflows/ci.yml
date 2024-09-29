@@ -145,7 +145,7 @@ jobs:
         if: matrix.platform == 'IOS'
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: "15.3"
+          xcode-version: "16.0"
       - name: remove pod
         run: |
           rm -rf uniscore-mobile/ios/Pods
@@ -186,18 +186,15 @@ jobs:
         if: matrix.platform == 'IOS'
         run: ln -s $(command -v node) /usr/local/bin/node
 
-      # - name: Build IPA
-      #   if: matrix.format == 'IPA'
-      #   working-directory: uniscore-mobile
-      #   run: yarn build:ios-dev-release
       - name: Build IPA
         if: matrix.format == 'IPA'
         working-directory: uniscore-mobile
-        run: bundle exec fastlane ios ipa
-      # - name: Push to testflight
-      #   if: matrix.format == 'IPA'
-      #   working-directory: uniscore-mobile
-      #   run: bundle exec fastlane ios testflight
+        run: yarn build:ios-dev-release
+
+      - name: Push to testflight
+        if: matrix.format == 'IPA'
+        working-directory: uniscore-mobile
+        run: bundle exec fastlane ios testflight
       # - name: Deploy apk
       #   working-directory: uniscore-mobile
       #   run: bundle exec fastlane android beta
