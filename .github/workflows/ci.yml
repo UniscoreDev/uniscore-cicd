@@ -189,7 +189,7 @@ jobs:
       - name: Build IPA
         if: matrix.format == 'IPA'
         working-directory: uniscore-mobile
-        run: bundle exec fastlane ios ipa
+        run: yarn build:ios-dev-release
       # - name: Deploy apk
       #   working-directory: uniscore-mobile
       #   run: bundle exec fastlane android beta
