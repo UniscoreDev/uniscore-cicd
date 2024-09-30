@@ -190,6 +190,7 @@ jobs:
           restore-keys: xcode-cache-deriveddata-${{ needs.init.outputs.env }}-
 
       - name: Change version and build number
+        working-directory: uniscore-mobile
         run: bash .github/scripts/change_version_and_build_number.sh
 
       - name: Install certificate and provision
