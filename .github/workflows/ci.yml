@@ -2,6 +2,11 @@ name: Multi-Step Workflow
 
 on:
   workflow_dispatch:
+    inputs:
+      ref_name:
+        description: "The ref name to use"
+        required: true
+        default: "main"
   push:
     tags:
       - v*
