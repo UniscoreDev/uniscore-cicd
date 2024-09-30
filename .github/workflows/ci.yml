@@ -8,7 +8,7 @@ on:
 env:
   LC_ALL: en_US.UTF-8
   LANG: en_US.UTF-8
-  REF_NAME: ${{ github.event.client_payload.ref_name }}
+  REF_NAME: ${{ github.event.inputs.ref_name }}
   P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
   GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
   MAIN_REPO: ${{ secrets.MAIN_REPO }}
