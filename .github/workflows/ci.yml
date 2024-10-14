@@ -214,11 +214,19 @@ jobs:
       - name: Deploy apk
         working-directory: uniscore-mobile
         run: bundle exec fastlane android beta
+      - name: Deploy apk
+        working-directory: uniscore-mobile
+        run: bundle exec fastlane android beta
       - name: Deploy APK to firebase
-        if: matrix.format == 'APK'
+        # if: matrix.format == 'APK'
         uses: maierj/fastlane-action@v3.1.0
         with:
           lane: android beta
+      # - name: Deploy APK to firebase
+      #   if: matrix.format == 'APK'
+      #   uses: maierj/fastlane-action@v3.1.0
+      #   with:
+      #     lane: android beta
   # - name: Build AAB
   #   # if: matrix.format == 'AAB'
   #   working-directory: uniscore-mobile
