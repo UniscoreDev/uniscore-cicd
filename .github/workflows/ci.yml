@@ -207,21 +207,29 @@ jobs:
         working-directory: uniscore-mobile
         run: yarn build:ios-dev-release
 
+      - name: Build APK
+        if: matrix.format == 'APK'
+        working-directory: uniscore-mobile
+        run: yarn build:dev:apk
+
       - name: Push to testflight
         if: matrix.format == 'IPA'
         working-directory: uniscore-mobile
         run: bundle exec fastlane ios testflight
+
       - name: Deploy apk
         working-directory: uniscore-mobile
-        run: bundle exec fastlane android beta
-      - name: Deploy apk
-        working-directory: uniscore-mobile
-        run: bundle exec fastlane android beta
-      - name: Deploy APK to firebase
-        # if: matrix.format == 'APK'
-        uses: maierj/fastlane-action@v3.1.0
-        with:
-          lane: android beta
+        run:
+          bundle exec fastlane android beta
+
+          # - name: Deploy apk
+      #   working-directory: uniscore-mobile
+      #   run: bundle exec fastlane android beta
+      # - name: Deploy APK to firebase
+      #   # if: matrix.format == 'APK'
+      #   uses: maierj/fastlane-action@v3.1.0
+      #   with:
+      #     lane: android beta
       # - name: Deploy APK to firebase
       #   if: matrix.format == 'APK'
       #   uses: maierj/fastlane-action@v3.1.0
