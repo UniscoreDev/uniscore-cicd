@@ -205,7 +205,7 @@ jobs:
         run: ln -s $(command -v node) /usr/local/bin/node
       # Build IPA dựa theo môi trường
       - name: Build IPA Dev Release
-        if: matrix.format == 'IPA' && env == 'dev'
+        if: matrix.format == 'IPA'
         working-directory: uniscore-mobile
         run: yarn build:ios-dev-release
 
@@ -225,7 +225,7 @@ jobs:
         run: yarn build:ios-prod-release
       # Build APK dựa theo môi trường
       - name: Build APK
-        if: matrix.format == 'APK' && env == 'dev'
+        if: matrix.format == 'APK'
         working-directory: uniscore-mobile
         run: yarn build:dev:apk
 
@@ -249,20 +249,20 @@ jobs:
         working-directory: uniscore-mobile
         run: bundle exec fastlane ios testflight
 
-      - name: Push to testflight staging
-        if: matrix.format == 'IPA'
-        working-directory: uniscore-mobile
-        run: bundle exec fastlane ios testflight_stag
+      # - name: Push to testflight staging
+      #   if: matrix.format == 'IPA'
+      #   working-directory: uniscore-mobile
+      #   run: bundle exec fastlane ios testflight_stag
 
-      - name: Push to testflight
-        if: matrix.format == 'IPA'
-        working-directory: uniscore-mobile
-        run: bundle exec fastlane ios testflight_beta
+      # - name: Push to testflight
+      #   if: matrix.format == 'IPA'
+      #   working-directory: uniscore-mobile
+      #   run: bundle exec fastlane ios testflight_beta
 
-      - name: Push to testflight
-        if: matrix.format == 'IPA'
-        working-directory: uniscore-mobile
-        run: bundle exec fastlane ios testflight
+      # - name: Push to testflight
+      #   if: matrix.format == 'IPA'
+      #   working-directory: uniscore-mobile
+      #   run: bundle exec fastlane ios testflight
 
       # Deploy apk
       - name: Deploy apk
