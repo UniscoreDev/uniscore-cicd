@@ -44,6 +44,8 @@ jobs:
             ENV='prd'
           elif [[ "$REF_NAME" =~ "stg" ]]; then
             ENV='stg'
+          elif [[ "$REF_NAME" =~ "beta" ]]; then
+            ENV='beta'
           fi
           echo "value=$ENV" >> $GITHUB_OUTPUT
       - name: Log value
@@ -201,42 +203,53 @@ jobs:
       - name: Link Node (/usr/local/bin/node)
         if: matrix.platform == 'IOS'
         run: ln -s $(command -v node) /usr/local/bin/node
-
-      - name: Build IPA
-        if: matrix.format == 'IPA'
+      # Build IPA dựa theo môi trường
+      - name: Build IPA Dev Release
+        if: matrix.format == 'IPA' && env == 'dev'
         working-directory: uniscore-mobile
         run: yarn build:ios-dev-release
 
+      - name: Build IPA Staging Release
+        if: matrix.format == 'IPA' && env == 'stag'
+        working-directory: uniscore-mobile
+        run: yarn build:ios-stag-release
+
+      - name: Build IPA Beta Release
+        if: matrix.format == 'IPA' && env == 'beta'
+        working-directory: uniscore-mobile
+        run: yarn build:ios-stag-release
+
+      - name: Build IPA Staging Release
+        if: matrix.format == 'IPA' && env == 'prd'
+        working-directory: uniscore-mobile
+        run: yarn build:ios-prod-release
+      # Build APK dựa theo môi trường
       - name: Build APK
-        if: matrix.format == 'APK'
+        if: matrix.format == 'APK' && env == 'dev'
         working-directory: uniscore-mobile
         run: yarn build:dev:apk
 
+      - name: Build APK
+        if: matrix.format == 'APK' && env == 'stag'
+        working-directory: uniscore-mobile
+        run: yarn build:stag:apk
+
+      - name: Build APK
+        if: matrix.format == 'APK' && env == 'beta'
+        working-directory: uniscore-mobile
+        run: yarn build:beta:apk
+
+      - name: Build APK
+        if: matrix.format == 'APK' && env == 'beta'
+        working-directory: uniscore-mobile
+        run: yarn build:beta:apk
+      #  Push to testflight
       - name: Push to testflight
         if: matrix.format == 'IPA'
         working-directory: uniscore-mobile
         run: bundle exec fastlane ios testflight
-
+      # Deploy apk
       - name: Deploy apk
         if: matrix.format == 'APK'
         working-directory: uniscore-mobile
-        run:
-          bundle exec fastlane android beta
-
-          # - name: Deploy apk
-      #   working-directory: uniscore-mobile
-      #   run: bundle exec fastlane android beta
-      # - name: Deploy APK to firebase
-      #   # if: matrix.format == 'APK'
-      #   uses: maierj/fastlane-action@v3.1.0
-      #   with:
-      #     lane: android beta
-      # - name: Deploy APK to firebase
-      #   if: matrix.format == 'APK'
-      #   uses: maierj/fastlane-action@v3.1.0
-      #   with:
-      #     lane: android beta
-  # - name: Build AAB
-  #   # if: matrix.format == 'AAB'
-  #   working-directory: uniscore-mobile
-  #   run: yarn b:dev-abb
+        run: bundle exec fastlane android beta
