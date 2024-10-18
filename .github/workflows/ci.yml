@@ -218,6 +218,7 @@ jobs:
         run: bundle exec fastlane ios testflight
 
       - name: Deploy apk
+        if: matrix.format == 'APK'
         working-directory: uniscore-mobile
         run:
           bundle exec fastlane android beta
