@@ -240,14 +240,30 @@ jobs:
         run: yarn build:beta:apk
 
       - name: Build APK
-        if: matrix.format == 'APK' && env == 'beta'
+        if: matrix.format == 'APK' && env == 'prd'
         working-directory: uniscore-mobile
-        run: yarn build:beta:apk
+        run: yarn build:prod:apk
       #  Push to testflight
+      - name: Push to testflight dev
+        if: matrix.format == 'IPA'
+        working-directory: uniscore-mobile
+        run: bundle exec fastlane ios testflight
+
+      - name: Push to testflight staging
+        if: matrix.format == 'IPA'
+        working-directory: uniscore-mobile
+        run: bundle exec fastlane ios testflight_stag
+
+      - name: Push to testflight
+        if: matrix.format == 'IPA'
+        working-directory: uniscore-mobile
+        run: bundle exec fastlane ios testflight_beta
+
       - name: Push to testflight
         if: matrix.format == 'IPA'
         working-directory: uniscore-mobile
         run: bundle exec fastlane ios testflight
+
       # Deploy apk
       - name: Deploy apk
         if: matrix.format == 'APK'
