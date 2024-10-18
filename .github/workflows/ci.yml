@@ -209,20 +209,20 @@ jobs:
         working-directory: uniscore-mobile
         run: yarn build:ios-dev-release
 
-      - name: Build IPA Staging Release
-        if: matrix.format == 'IPA' && env == 'stag'
-        working-directory: uniscore-mobile
-        run: yarn build:ios-stag-release
+      # - name: Build IPA Staging Release
+      #   if: matrix.format == 'IPA' && env == 'stag'
+      #   working-directory: uniscore-mobile
+      #   run: yarn build:ios-stag-release
 
-      - name: Build IPA Beta Release
-        if: matrix.format == 'IPA' && env == 'beta'
-        working-directory: uniscore-mobile
-        run: yarn build:ios-stag-release
+      # - name: Build IPA Beta Release
+      #   if: matrix.format == 'IPA' && env == 'beta'
+      #   working-directory: uniscore-mobile
+      #   run: yarn build:ios-stag-release
 
-      - name: Build IPA Staging Release
-        if: matrix.format == 'IPA' && env == 'prd'
-        working-directory: uniscore-mobile
-        run: yarn build:ios-prod-release
+      # - name: Build IPA Staging Release
+      #   if: matrix.format == 'IPA' && env == 'prd'
+      #   working-directory: uniscore-mobile
+      #   run: yarn build:ios-prod-release
       # Build APK dựa theo môi trường
       - name: Build APK
         if: matrix.format == 'APK'
