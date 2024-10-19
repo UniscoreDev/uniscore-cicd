@@ -179,10 +179,10 @@ jobs:
             uniscore-mobile/ios/Podfile.lock
           key: cache-pods-${{ hashFiles('yarn.lock') }}
 
-      - name: Pod install
-        if: ${{ (matrix.platform == 'IOS') && (steps.cache-pods.outputs.cache-hit != 'false') }}
-        working-directory: uniscore-mobile/ios
-        run: pod install
+      # - name: Pod install
+      #   if: ${{ (matrix.platform == 'IOS') && (steps.cache-pods.outputs.cache-hit != 'false') }}
+      #   working-directory: uniscore-mobile/ios
+      #   run: pod install
 
       - name: Cache Xcode build
         uses: irgaly/xcode-cache@v1
@@ -264,5 +264,5 @@ jobs:
       - name: Deploy apk
         if: ${{matrix.format == 'APK'}}
         working-directory: uniscore-mobile
-        run: echo thành công deploy
+        run: echo thành công deploy ${{env}}
         # run: bundle exec fastlane android beta
