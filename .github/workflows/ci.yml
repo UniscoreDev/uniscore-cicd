@@ -263,17 +263,14 @@ jobs:
       - name: Deploy apk
         if: ${{ matrix.format == 'APK' && needs.init.outputs.env == 'dev' }}
         working-directory: uniscore-mobile
-
         run: bundle exec fastlane android dev
 
       - name: Deploy apk
         if: ${{ matrix.format == 'APK' && needs.init.outputs.env == 'stag' }}
         working-directory: uniscore-mobile
-
         run: bundle exec fastlane android staging
 
       - name: Deploy apk
         if: ${{ matrix.format == 'APK' && needs.init.outputs.env == 'beta' }}
         working-directory: uniscore-mobile
-
         run: bundle exec fastlane android beta
