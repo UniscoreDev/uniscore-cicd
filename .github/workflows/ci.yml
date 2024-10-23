@@ -299,15 +299,23 @@ jobs:
         working-directory: uniscore-mobile
         run: bundle exec fastlane android beta
 
-      - name: Send telegram message
+      - name: Send telegram message for iOS
+        if: ${{ matrix.platform == 'IOS' }}
         uses: UniscoreDev/macos-telegram-action@main
         with:
           type: topic
-          message: "✅ - Build thành công rồi hàng đã có trên testflight và appdistribution ${{ matrix.format }}: ${{ needs.init.outputs.message-information }}"
+          message: "✅ - Build thành công ${{ matrix.format }} rồi hàng đã có trên TestFlight: ${{ needs.init.outputs.message-information }}"
+
+      - name: Send telegram message for Android
+        if: ${{ matrix.platform == 'ANDROID' }}
+        uses: UniscoreDev/macos-telegram-action@main
+        with:
+          type: topic
+          message: "✅ - Build thành công ${{ matrix.format }} rồi hàng đã có trên App Distribution: ${{ needs.init.outputs.message-information }}"
 
       - name: Send telegram message failure
         if: ${{ failure() }}
         uses: UniscoreDev/macos-telegram-action@main
         with:
           type: topic
-          message: "💥 - Thất bại: Có gì đó sai sai rồi, check lại nhé ${{ matrix.format }}: ${{ needs.init.outputs.message-information }}"
+          message: "💥 - [${{ matrix.format }}] Thất bại: Có gì đó sai sai rồi, check lại nhé : ${{ needs.init.outputs.message-information }}"
