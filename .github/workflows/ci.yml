@@ -33,8 +33,7 @@ jobs:
           git clone https://oauth2:$GITLAB_TOKEN@gitlab.com/unity1185445/uniscore-mobile.git
           cd uniscore-mobile
           git checkout $REF_NAME
-      - name: Checkout code
-        uses: actions/checkout@v4
+
       - name: Set matrix
         id: set-matrix
         run: |
@@ -58,8 +57,8 @@ jobs:
           echo "value=$ENV" >> $GITHUB_OUTPUT
 
       - name: Generate message
-        id: get-message-information
         working-directory: uniscore-mobile
+        id: get-message-information
         run: |
           source .github/scripts/utils.sh
           echo "value=$(get_message_information)" >> "$GITHUB_OUTPUT"
