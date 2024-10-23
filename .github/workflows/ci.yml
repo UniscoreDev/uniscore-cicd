@@ -48,7 +48,7 @@ jobs:
         run: |
           ENV='dev'
           if [[ "$REF_NAME" =~ "prod" ]]; then
-            ENV='prd'
+            ENV='prod'
           elif [[ "$REF_NAME" =~ "stg" ]]; then
             ENV='stg'
           elif [[ "$REF_NAME" =~ "beta" ]]; then
@@ -242,7 +242,7 @@ jobs:
         working-directory: uniscore-mobile
         run: yarn build:ios-beta-release
       - name: Build IPA Staging Release
-        if: ${{matrix.format == 'IPA' && needs.init.outputs.env == 'prd'}}
+        if: ${{matrix.format == 'IPA' && needs.init.outputs.env == 'prod'}}
         working-directory: uniscore-mobile
         run: yarn build:ios-prod-release
       # Build APK dựa theo môi trường
