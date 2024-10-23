@@ -93,6 +93,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "18"
+      - name: Remove node_modules
+        run: rm -rf uniscore-mobile/node_modules
       - name: Cache node_modules
         id: cache-node-modules
         uses: actions/cache@v4
