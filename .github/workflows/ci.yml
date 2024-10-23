@@ -81,7 +81,11 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        include: ${{ fromJson(needs.init.outputs.matrix) }}
+        include:
+          - name: "macos-14"
+            platform: "IOS"
+          - name: "ubuntu-22.04"
+            platform: "ANDROID"
     steps:
       - name: Clone the GitLab repository
         run: |
