@@ -87,7 +87,7 @@ jobs:
         run: |
           git clone https://oauth2:$GITLAB_TOKEN@gitlab.com/unity1185445/uniscore-mobile.git
           cd uniscore-mobile
-          echo "Cloning GitLab repository..."
+          git checkout $REF_NAME
 
       - name: Setup Node v18
         uses: actions/setup-node@v4
