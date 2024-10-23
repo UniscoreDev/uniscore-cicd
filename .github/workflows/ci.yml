@@ -115,7 +115,7 @@ jobs:
         uses: UniscoreDev/macos-telegram-action@main
         with:
           type: topic
-          message: "💥 - Failure ${{ matrix.platform }}: ${{ needs.init.outputs.message-information }}"
+          message: "💥 - Thất bại rồi bạn hiền ${{ matrix.platform }}: ${{ needs.init.outputs.message-information }}"
 
   deploy:
     name: Deployment ${{ matrix.format }}
@@ -205,6 +205,7 @@ jobs:
 
       - name: Pod install
         # if: ${{ (matrix.platform == 'IOS') && (steps.cache-pods.outputs.cache-hit != 'false') }}
+        if: matrix.platform == 'IOS'
         working-directory: uniscore-mobile/ios
         run: pod install
 
@@ -303,11 +304,11 @@ jobs:
         uses: UniscoreDev/macos-telegram-action@main
         with:
           type: topic
-          message: "✅ - Success ${{ matrix.format }}: ${{ needs.init.outputs.message-information }}"
+          message: "✅ - Build thành công rồi hàng đã có trên testflight và appdistribution ${{ matrix.format }}: ${{ needs.init.outputs.message-information }}"
 
       - name: Send telegram message failure
         if: ${{ failure() }}
         uses: UniscoreDev/macos-telegram-action@main
         with:
           type: topic
-          message: "💥 - Failure ${{ matrix.format }}: ${{ needs.init.outputs.message-information }}"
+          message: "💥 - Thất bại: Có gì đó sai sai rồi, check lại nhé ${{ matrix.format }}: ${{ needs.init.outputs.message-information }}"
