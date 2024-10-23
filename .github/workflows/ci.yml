@@ -98,7 +98,7 @@ jobs:
         run: echo "Testing..."
 
       - name: Send telegram message
-        uses: PacificPromise/macos-telegram-action@main
+        uses: UniscoreDev/macos-telegram-action@main
         with:
           type: topic
           message: "🎬 -  Start build: Test gửi telegram"
