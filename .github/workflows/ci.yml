@@ -37,11 +37,11 @@ jobs:
       - name: Set matrix
         id: set-matrix
         run: |
-          MATRIX="[{\"format\":\"IPA\",\"name\":\"macos-14\",\"platform\":\"IOS\"},{\"format\":\"APK\",\"name\":\"ubuntu-22.04\",\"platform\":\"ANDROID\"}]"
+          MATRIX='[{"format":"IPA","name":"macos-14","platform":"IOS"},{"format":"APK","name":"ubuntu-22.04","platform":"ANDROID"}]'
           if [[ "$REF_NAME" =~ "prod" ]]; then
-            MATRIX="[{\"format\":\"IPA\",\"name\":\"macos-14\",\"platform\":\"IOS\"},{\"format\":\"APK\",\"name\":\"ubuntu-22.04\",\"platform\":\"ANDROID\"},{\"format\":\"AAB\",\"name\":\"ubuntu-22.04\",\"platform\":\"ANDROID\"}]"
+            MATRIX='[{"format":"IPA","name":"macos-14","platform":"IOS"},{"format":"APK","name":"ubuntu-22.04","platform":"ANDROID"},{"format":"AAB","name":"ubuntu-22.04","platform":"ANDROID"}]'
           fi
-          echo "value=$MATRIX" >> $GITHUB_OUTPUT
+          echo "::set-output name=matrix::$MATRIX"
 
       - name: Set env
         id: set-env
@@ -81,7 +81,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        include: ${{ needs.init.outputs.matrix && fromJson(needs.init.outputs.matrix) }}
+        include: ${{ fromJson(needs.init.outputs.matrix) }}
     steps:
       - name: Clone the GitLab repository
         run: |
@@ -123,7 +123,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        include: ${{ needs.init.outputs.matrix && fromJson(needs.init.outputs.matrix) }}
+        include: ${{ fromJson(needs.init.outputs.matrix) }}
     runs-on: ${{ matrix.name }}
     needs: [init, prepare]
     timeout-minutes: 60
