@@ -28,6 +28,11 @@ jobs:
       message-information: ${{ steps.get-message-information.outputs.value }}
       env: ${{ steps.set-env.outputs.value }}
     steps:
+      - name: Clone the GitLab repository
+        run: |
+          git clone https://oauth2:$GITLAB_TOKEN@gitlab.com/unity1185445/uniscore-mobile.git
+          cd uniscore-mobile
+          echo "Cloning GitLab repository..."
       - name: Checkout code
         uses: actions/checkout@v4
       - name: Set matrix
@@ -51,11 +56,24 @@ jobs:
             ENV='beta'
           fi
           echo "value=$ENV" >> $GITHUB_OUTPUT
+
+      - name: Generate message
+        id: get-message-information
+        working-directory: uniscore-mobile
+        run: |
+          source .github/scripts/utils.sh
+          echo "value=$(get_message_information)" >> "$GITHUB_OUTPUT"
+        timeout-minutes: 1
       - name: Log value
         run: |
           echo "tag-source: $REF_NAME"
           echo "matrix: ${{ steps.set-matrix.outputs.value }}"
           echo "env: ${{ steps.set-env.outputs.value }}"
+      - name: Send telegram message
+        uses: UniscoreDev/macos-telegram-action@main
+        with:
+          type: topic
+          message: "🎬 -  Bắt đầu build: ${{ steps.get-message-information.outputs.value }}"
 
   prepare:
     name: Prepare ${{ matrix.format }}
@@ -97,11 +115,6 @@ jobs:
       - name: Run tests
         run: echo "Testing..."
 
-      - name: Send telegram message
-        uses: UniscoreDev/macos-telegram-action@main
-        with:
-          type: topic
-          message: "🎬 -  Start build: Test gửi telegram"
   # deploy:
   #   name: Deployment ${{ matrix.format }}
   #   continue-on-error: true
