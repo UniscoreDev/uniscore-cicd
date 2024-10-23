@@ -102,7 +102,7 @@ jobs:
           lookup-only: true
       - name: Run yarn install
         # uses: borales/actions-yarn@v5
-        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        # if: steps.cache-node-modules.outputs.cache-hit != 'true'
         run: |
           cd uniscore-mobile
           yarn install --network-concurrency 1
@@ -204,7 +204,7 @@ jobs:
           key: cache-pods-${{ hashFiles('package.json') }}
 
       - name: Pod install
-        if: ${{ (matrix.platform == 'IOS') && (steps.cache-pods.outputs.cache-hit != 'false') }}
+        # if: ${{ (matrix.platform == 'IOS') && (steps.cache-pods.outputs.cache-hit != 'false') }}
         working-directory: uniscore-mobile/ios
         run: pod install
 
