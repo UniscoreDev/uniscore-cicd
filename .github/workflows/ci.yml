@@ -28,11 +28,11 @@ jobs:
       message-information: ${{ steps.get-message-information.outputs.value }}
       env: ${{ steps.set-env.outputs.value }}
     steps:
-      - name: Clone the GitLab repository
+      - name: Clone GitLab repository
         run: |
           git clone https://oauth2:$GITLAB_TOKEN@gitlab.com/unity1185445/uniscore-mobile.git
           cd uniscore-mobile
-          echo "Cloning GitLab repository..."
+          git checkout $REF_NAME
       - name: Checkout code
         uses: actions/checkout@v4
       - name: Set matrix
