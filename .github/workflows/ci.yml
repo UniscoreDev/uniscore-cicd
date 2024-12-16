@@ -49,8 +49,8 @@ jobs:
           ENV='dev'
           if [[ "$REF_NAME" =~ "prod" ]]; then
             ENV='prod'
-          elif [[ "$REF_NAME" =~ "stg" ]]; then
-            ENV='stg'
+          elif [[ "$REF_NAME" =~ "stag" ]]; then
+            ENV='stag'
           elif [[ "$REF_NAME" =~ "beta" ]]; then
             ENV='beta'
           fi
@@ -270,7 +270,7 @@ jobs:
         run: bundle exec fastlane ios testflight
 
       - name: Push to testflight staging
-        if: ${{ matrix.format == 'IPA' && needs.init.outputs.env == 'stg' }}
+        if: ${{ matrix.format == 'IPA' && needs.init.outputs.env == 'stag' }}
         working-directory: uniscore-mobile
         run: bundle exec fastlane ios testflight_stag
 
