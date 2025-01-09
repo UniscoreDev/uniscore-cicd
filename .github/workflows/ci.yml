@@ -182,7 +182,7 @@ jobs:
         if: matrix.platform == 'IOS'
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: "16.0"
+          xcode-version: "16.1.0"
       # - name: remove pod
       #   run: |
       #     rm -rf uniscore-mobile/ios/Pods
