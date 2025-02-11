@@ -68,11 +68,11 @@ jobs:
           echo "tag-source: $REF_NAME"
           echo "matrix: ${{ steps.set-matrix.outputs.value }}"
           echo "env: ${{ steps.set-env.outputs.value }}"
-      - name: Send telegram message
-        uses: UniscoreDev/macos-telegram-action@main
-        with:
-          type: topic
-          message: "🎬 -  Bắt đầu build: ${{ steps.get-message-information.outputs.value }}"
+      # - name: Send telegram message
+      #   uses: UniscoreDev/macos-telegram-action@main
+      #   with:
+      #     type: topic
+      #     message: "🎬 -  Bắt đầu build: ${{ steps.get-message-information.outputs.value }}"
 
   prepare:
     name: Prepare ${{ matrix.format }}
