@@ -98,7 +98,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: uniscore-mobile/node_modules
-          key: ${{ matrix.platform }}-cache-node-modules-${{ hashFiles('package.json') }}
+          key: ${{ matrix.platform }}-cache-node-modules-${{ hashFiles('yarn.lock') }}
           lookup-only: true
       - name: Run yarn install
         # uses: borales/actions-yarn@v5
@@ -192,7 +192,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: uniscore-mobile/node_modules
-          key: ${{ matrix.platform }}-cache-node-modules-${{ hashFiles('package.json') }}
+          key: ${{ matrix.platform }}-cache-node-modules-${{ hashFiles('yarn.lock') }}
       - name: Cache Pods
         if: matrix.platform == 'IOS'
         id: cache-pods
@@ -201,7 +201,7 @@ jobs:
           path: |
             uniscore-mobile/ios/Pods
             uniscore-mobile/ios/Podfile.lock
-          key: cache-pods-${{ hashFiles('package.json') }}
+          key: cache-pods-${{ hashFiles('yarn.lock') }}
 
       - name: Pod install
         if: ${{ (matrix.platform == 'IOS') && (steps.cache-pods.outputs.cache-hit != 'true') }}
@@ -212,7 +212,7 @@ jobs:
         uses: irgaly/xcode-cache@v1
         if: matrix.platform == 'IOS'
         with:
-          key: xcode-cache-deriveddata-${{ needs.init.outputs.env }}-${{ hashFiles('package.json') }}
+          key: xcode-cache-deriveddata-${{ needs.init.outputs.env }}-${{ hashFiles('yarn.lock') }}
           restore-keys: xcode-cache-deriveddata-${{ needs.init.outputs.env }}-
 
       - name: Change version and build number
