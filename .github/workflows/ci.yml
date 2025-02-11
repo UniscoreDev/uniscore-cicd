@@ -263,59 +263,59 @@ jobs:
         if: ${{matrix.format == 'APK' && needs.init.outputs.env == 'prod'}}
         working-directory: uniscore-mobile
         run: yarn build:prod:apk
-      #  Push to testflight
-      - name: Push to testflight dev
-        if: ${{ matrix.format == 'IPA' && needs.init.outputs.env == 'dev' }}
-        working-directory: uniscore-mobile
-        run: bundle exec fastlane ios testflight
+      # #  Push to testflight
+      # - name: Push to testflight dev
+      #   if: ${{ matrix.format == 'IPA' && needs.init.outputs.env == 'dev' }}
+      #   working-directory: uniscore-mobile
+      #   run: bundle exec fastlane ios testflight
 
-      - name: Push to testflight staging
-        if: ${{ matrix.format == 'IPA' && needs.init.outputs.env == 'stag' }}
-        working-directory: uniscore-mobile
-        run: bundle exec fastlane ios testflight_stag
+      # - name: Push to testflight staging
+      #   if: ${{ matrix.format == 'IPA' && needs.init.outputs.env == 'stag' }}
+      #   working-directory: uniscore-mobile
+      #   run: bundle exec fastlane ios testflight_stag
 
-      - name: Push to testflight beta
-        if: ${{ matrix.format == 'IPA' && needs.init.outputs.env == 'beta' }}
-        working-directory: uniscore-mobile
-        run: bundle exec fastlane ios testflight_beta
+      # - name: Push to testflight beta
+      #   if: ${{ matrix.format == 'IPA' && needs.init.outputs.env == 'beta' }}
+      #   working-directory: uniscore-mobile
+      #   run: bundle exec fastlane ios testflight_beta
 
-      - name: Push to testflight production
-        if: ${{ matrix.format == 'IPA' && needs.init.outputs.env == 'prod' }}
-        working-directory: uniscore-mobile
-        run: bundle exec fastlane ios testflight_prod
-      # Deploy apk
-      - name: Deploy apk
-        if: ${{ matrix.format == 'APK' && needs.init.outputs.env == 'dev' }}
-        working-directory: uniscore-mobile
-        run: bundle exec fastlane android dev
+      # - name: Push to testflight production
+      #   if: ${{ matrix.format == 'IPA' && needs.init.outputs.env == 'prod' }}
+      #   working-directory: uniscore-mobile
+      #   run: bundle exec fastlane ios testflight_prod
+      # # Deploy apk
+      # - name: Deploy apk
+      #   if: ${{ matrix.format == 'APK' && needs.init.outputs.env == 'dev' }}
+      #   working-directory: uniscore-mobile
+      #   run: bundle exec fastlane android dev
 
-      - name: Deploy apk
-        if: ${{ matrix.format == 'APK' && needs.init.outputs.env == 'stag' }}
-        working-directory: uniscore-mobile
-        run: bundle exec fastlane android staging
+      # - name: Deploy apk
+      #   if: ${{ matrix.format == 'APK' && needs.init.outputs.env == 'stag' }}
+      #   working-directory: uniscore-mobile
+      #   run: bundle exec fastlane android staging
 
-      - name: Deploy apk
-        if: ${{ matrix.format == 'APK' && needs.init.outputs.env == 'beta' }}
-        working-directory: uniscore-mobile
-        run: bundle exec fastlane android beta
+      # - name: Deploy apk
+      #   if: ${{ matrix.format == 'APK' && needs.init.outputs.env == 'beta' }}
+      #   working-directory: uniscore-mobile
+      #   run: bundle exec fastlane android beta
 
-      - name: Send telegram message for iOS
-        if: ${{ matrix.platform == 'IOS' }}
-        uses: UniscoreDev/macos-telegram-action@main
-        with:
-          type: topic
-          message: "✅ - Build thành công ${{ matrix.format }} rồi hàng đã có trên TestFlight: ${{ needs.init.outputs.message-information }}"
+      # - name: Send telegram message for iOS
+      #   if: ${{ matrix.platform == 'IOS' }}
+      #   uses: UniscoreDev/macos-telegram-action@main
+      #   with:
+      #     type: topic
+      #     message: "✅ - Build thành công ${{ matrix.format }} rồi hàng đã có trên TestFlight: ${{ needs.init.outputs.message-information }}"
 
-      - name: Send telegram message for Android
-        if: ${{ matrix.platform == 'ANDROID' }}
-        uses: UniscoreDev/macos-telegram-action@main
-        with:
-          type: topic
-          message: "✅ - Build thành công ${{ matrix.format }} rồi hàng đã có trên App Distribution: ${{ needs.init.outputs.message-information }}"
+      # - name: Send telegram message for Android
+      #   if: ${{ matrix.platform == 'ANDROID' }}
+      #   uses: UniscoreDev/macos-telegram-action@main
+      #   with:
+      #     type: topic
+      #     message: "✅ - Build thành công ${{ matrix.format }} rồi hàng đã có trên App Distribution: ${{ needs.init.outputs.message-information }}"
 
-      - name: Send telegram message failure
-        if: ${{ failure() }}
-        uses: UniscoreDev/macos-telegram-action@main
-        with:
-          type: topic
-          message: "💥 - [${{ matrix.format }}] Thất bại: Có gì đó sai sai rồi, check lại nhé : ${{ needs.init.outputs.message-information }}"
+      # - name: Send telegram message failure
+      #   if: ${{ failure() }}
+      #   uses: UniscoreDev/macos-telegram-action@main
+      #   with:
+      #     type: topic
+      #     message: "💥 - [${{ matrix.format }}] Thất bại: Có gì đó sai sai rồi, check lại nhé : ${{ needs.init.outputs.message-information }}"
