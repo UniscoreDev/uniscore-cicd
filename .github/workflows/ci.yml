@@ -193,27 +193,32 @@ jobs:
         with:
           path: uniscore-mobile/node_modules
           key: ${{ matrix.platform }}-cache-node-modules-${{ hashFiles('uniscore-mobile/package.json') }}
-      - name: Cache Pods
-        if: matrix.platform == 'IOS'
-        id: cache-pods
-        uses: actions/cache@v4
-        with:
-          path: |
-            uniscore-mobile/ios/Pods
-            uniscore-mobile/ios/Podfile.lock
-          key: cache-pods-${{ hashFiles('uniscore-mobile/package.json') }}
+      # - name: Cache Pods
+      #   if: matrix.platform == 'IOS'
+      #   id: cache-pods
+      #   uses: actions/cache@v4
+      #   with:
+      #     path: |
+      #       uniscore-mobile/ios/Pods
+      #       uniscore-mobile/ios/Podfile.lock
+      #     key: cache-pods-${{ hashFiles('uniscore-mobile/package.json') }}
+
+      # - name: Pod install
+      #   if: ${{ (matrix.platform == 'IOS') && (steps.cache-pods.outputs.cache-hit != 'true') }}
+      #   working-directory: uniscore-mobile/ios
+      #   run: pod install
 
       - name: Pod install
-        if: ${{ (matrix.platform == 'IOS') && (steps.cache-pods.outputs.cache-hit != 'true') }}
+        if: ${{ (matrix.platform == 'IOS') }}
         working-directory: uniscore-mobile/ios
         run: pod install
 
-      - name: Cache Xcode build
-        uses: irgaly/xcode-cache@v1
-        if: matrix.platform == 'IOS'
-        with:
-          key: xcode-cache-deriveddata-${{ needs.init.outputs.env }}-${{ hashFiles('uniscore-mobile/package.json') }}
-          restore-keys: xcode-cache-deriveddata-${{ needs.init.outputs.env }}-
+      # - name: Cache Xcode build
+      #   uses: irgaly/xcode-cache@v1
+      #   if: matrix.platform == 'IOS'
+      #   with:
+      #     key: xcode-cache-deriveddata-${{ needs.init.outputs.env }}-${{ hashFiles('uniscore-mobile/package.json') }}
+      #     restore-keys: xcode-cache-deriveddata-${{ needs.init.outputs.env }}-
 
       - name: Change version and build number
         working-directory: uniscore-mobile
