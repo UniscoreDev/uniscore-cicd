@@ -89,23 +89,23 @@ jobs:
           cd uniscore-mobile
           git checkout $REF_NAME
 
-      - name: Setup Node v18
-        uses: actions/setup-node@v4
-        with:
-          node-version: "18"
-      - name: Cache node_modules
-        id: cache-node-modules
-        uses: actions/cache@v4
-        with:
-          path: uniscore-mobile/node_modules
-          key: ${{ matrix.platform }}-cache-node-modules-${{ hashFiles('uniscore-mobile/package.json') }}
-          lookup-only: true
-      - name: Run yarn install
-        # uses: borales/actions-yarn@v5
-        if: steps.cache-node-modules.outputs.cache-hit != 'true'
-        run: |
-          cd uniscore-mobile
-          yarn install --network-concurrency 1
+      # - name: Setup Node v18
+      #   uses: actions/setup-node@v4
+      #   with:
+      #     node-version: "18"
+      # - name: Cache node_modules
+      #   id: cache-node-modules
+      #   uses: actions/cache@v4
+      #   with:
+      #     path: uniscore-mobile/node_modules
+      #     key: ${{ matrix.platform }}-cache-node-modules-${{ hashFiles('uniscore-mobile/package.json') }}
+      #     lookup-only: true
+      # - name: Run yarn install
+      #   # uses: borales/actions-yarn@v5
+      #   if: steps.cache-node-modules.outputs.cache-hit != 'true'
+      #   run: |
+      #     cd uniscore-mobile
+      #     yarn install --network-concurrency 1
 
       - name: Run tests
         run: echo "Testing..."
@@ -187,12 +187,12 @@ jobs:
       #   run: |
       #     rm -rf uniscore-mobile/ios/Pods
       #     rm -rf uniscore-mobile/ios/Podfile.lock
-      - name: Cache node_modules
-        id: cache-node-modules
-        uses: actions/cache@v4
-        with:
-          path: uniscore-mobile/node_modules
-          key: ${{ matrix.platform }}-cache-node-modules-${{ hashFiles('uniscore-mobile/package.json') }}
+      # - name: Cache node_modules
+      #   id: cache-node-modules
+      #   uses: actions/cache@v4
+      #   with:
+      #     path: uniscore-mobile/node_modules
+      #     key: ${{ matrix.platform }}-cache-node-modules-${{ hashFiles('uniscore-mobile/package.json') }}
       # - name: Cache Pods
       #   if: matrix.platform == 'IOS'
       #   id: cache-pods
@@ -207,7 +207,22 @@ jobs:
       #   if: ${{ (matrix.platform == 'IOS') && (steps.cache-pods.outputs.cache-hit != 'true') }}
       #   working-directory: uniscore-mobile/ios
       #   run: pod install
-
+      - name: Setup Node v18
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+      # - name: Cache node_modules
+      #   id: cache-node-modules
+      #   uses: actions/cache@v4
+      #   with:
+      #     path: uniscore-mobile/node_modules
+      #     key: ${{ matrix.platform }}-cache-node-modules-${{ hashFiles('uniscore-mobile/package.json') }}
+      #     lookup-only: true
+      - name: Run yarn install
+        # uses: borales/actions-yarn@v5
+        run: |
+          cd uniscore-mobile
+          yarn install --network-concurrency 1
       - name: Pod install
         if: ${{ (matrix.platform == 'IOS') }}
         working-directory: uniscore-mobile/ios
