@@ -193,18 +193,18 @@ jobs:
         with:
           path: uniscore-mobile/node_modules
           key: ${{ matrix.platform }}-cache-node-modules-${{ hashFiles('uniscore-mobile/package.json') }}
-      - name: Cache Pods
-        if: matrix.platform == 'IOS'
-        id: cache-pods
-        uses: actions/cache@v4
-        with:
-          path: |
-            uniscore-mobile/ios/Pods
-            uniscore-mobile/ios/Podfile.lock
-          key: cache-pods-${{ hashFiles('uniscore-mobile/package.json') }}
+      # - name: Cache Pods
+      #   if: matrix.platform == 'IOS'
+      #   id: cache-pods
+      #   uses: actions/cache@v4
+      #   with:
+      #     path: |
+      #       uniscore-mobile/ios/Pods
+      #       uniscore-mobile/ios/Podfile.lock
+      #     key: cache-pods-${{ hashFiles('uniscore-mobile/package.json') }}
 
       - name: Pod install
-        if: ${{ (matrix.platform == 'IOS') && (steps.cache-pods.outputs.cache-hit != 'true') }}
+        if: ${{ (matrix.platform == 'IOS') }}
         working-directory: uniscore-mobile/ios
         run: pod install
       - name: Setup Node v18
