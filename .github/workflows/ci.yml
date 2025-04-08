@@ -141,10 +141,10 @@ jobs:
       #     mv uniscore-mobile/* ./
       #     mv uniscore-mobile/.[!.]* ./
       #     rm -rf uniscore-mobile
-      - name: Setup ruby 3.2.2
+      - name: Setup ruby 3.1.4
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: "3.2.2"
+          ruby-version: "3.1.4"
           bundler-cache: true
       - name: Bundle install
         working-directory: uniscore-mobile
