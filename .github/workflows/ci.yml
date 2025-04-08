@@ -110,12 +110,12 @@ jobs:
       - name: Run tests
         run: echo "Testing..."
 
-      - name: Send telegram message failure
-        if: ${{ failure() }}
-        uses: UniscoreDev/macos-telegram-action@main
-        with:
-          type: topic
-          message: "💥 - Thất bại rồi bạn hiền ${{ matrix.platform }}: ${{ needs.init.outputs.message-information }}"
+      # - name: Send telegram message failure
+      #   if: ${{ failure() }}
+      #   uses: UniscoreDev/macos-telegram-action@main
+      #   with:
+      #     type: topic
+      #     message: "💥 - Thất bại rồi bạn hiền ${{ matrix.platform }}: ${{ needs.init.outputs.message-information }}"
 
   deploy:
     name: Deployment ${{ matrix.format }}
@@ -334,9 +334,9 @@ jobs:
           type: topic
           message: "✅ - Build thành công ${{ matrix.format }} rồi hàng đã có trên App Distribution: ${{ needs.init.outputs.message-information }}"
 
-      - name: Send telegram message failure
-        if: ${{ failure() }}
-        uses: UniscoreDev/macos-telegram-action@main
-        with:
-          type: topic
-          message: "💥 - [${{ matrix.format }}] Thất bại: Có gì đó sai sai rồi, check lại nhé : ${{ needs.init.outputs.message-information }}"
+      # - name: Send telegram message failure
+      #   if: ${{ failure() }}
+      #   uses: UniscoreDev/macos-telegram-action@main
+      #   with:
+      #     type: topic
+      #     message: "💥 - [${{ matrix.format }}] Thất bại: Có gì đó sai sai rồi, check lại nhé : ${{ needs.init.outputs.message-information }}"
