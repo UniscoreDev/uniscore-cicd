@@ -77,7 +77,7 @@ jobs:
         uses: UniscoreDev/macos-telegram-action@main
         with:
           type: topic
-          message: "🎬 - Bắt đầu build: ${{ steps.get-message-information.outputs.value }}\n👨‍💻 - Thanh niên ấn build: ${{ env.COMMITTER_NAME || 'Unknown' }}"
+          message: "🎬 - Bắt đầu build: ${{ steps.get-message-information.outputs.value }}\n- Thanh niên ấn build 👨‍💻: ${{ env.COMMITTER_NAME || 'Unknown' }}\n"
 
   prepare:
     name: Prepare ${{ matrix.format }}
