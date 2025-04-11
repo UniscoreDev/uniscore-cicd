@@ -7,6 +7,10 @@ on:
         description: "The ref name to use"
         required: true
         default: "main"
+      committer_name:
+        description: "The committer name to use"
+        required: true
+        default: "Uniscore Dev"
   push:
     tags:
       - v*
@@ -14,6 +18,7 @@ env:
   LC_ALL: en_US.UTF-8
   LANG: en_US.UTF-8
   REF_NAME: ${{ github.event.inputs.ref_name }}
+  COMMITTER_NAME: ${{ github.event.inputs.committer_name }}
   P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
   GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
   MAIN_REPO: ${{ secrets.MAIN_REPO }}
@@ -72,7 +77,7 @@ jobs:
         uses: UniscoreDev/macos-telegram-action@main
         with:
           type: topic
-          message: "🎬 -  Bắt đầu build: ${{ steps.get-message-information.outputs.value }}"
+          message: "🎬 - Bắt đầu build: ${{ steps.get-message-information.outputs.value }}\nThanh niên ấn build: ${{ env.COMMITTER_NAME || 'Unknown' }}"
 
   prepare:
     name: Prepare ${{ matrix.format }}
