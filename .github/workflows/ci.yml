@@ -303,7 +303,7 @@ jobs:
       - name: Push to testflight beta
         if: ${{ matrix.format == 'IPA' && needs.init.outputs.env == 'beta' }}
         working-directory: uniscore-mobile
-        run: bundle exec fastlane ios testflight_beta
+        run: bundle exec fastlane ios testflight_alpha
 
       - name: Push to testflight production
         if: ${{ matrix.format == 'IPA' && needs.init.outputs.env == 'prod' }}
