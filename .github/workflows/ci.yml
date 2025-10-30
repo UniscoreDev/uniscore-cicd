@@ -192,46 +192,12 @@ jobs:
       #   run: |
       #     rm -rf uniscore-mobile/ios/Pods
       #     rm -rf uniscore-mobile/ios/Podfile.lock
-      # - name: Cache node_modules
-      #   id: cache-node-modules
-      #   uses: actions/cache@v4
-      #   with:
-      #     path: uniscore-mobile/node_modules
-      #     key: ${{ matrix.platform }}-cache-node-modules-${{ hashFiles('uniscore-mobile/package.json') }}
-      # Cache node_modules (chung cho cả iOS & Android)
       - name: Cache node_modules
         id: cache-node-modules
         uses: actions/cache@v4
         with:
           path: uniscore-mobile/node_modules
-          key: ${{ runner.os }}-node-modules-${{ hashFiles('uniscore-mobile/package-lock.json', 'uniscore-mobile/yarn.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-node-modules-
-
-      # Cache CocoaPods
-      - name: Cache Pods
-        if: matrix.platform == 'IOS'
-        uses: actions/cache@v4
-        with:
-          path: |
-            uniscore-mobile/ios/Pods
-            uniscore-mobile/ios/Podfile.lock
-          key: ${{ runner.os }}-pods-${{ hashFiles('uniscore-mobile/ios/Podfile.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-pods-
-
-      # Cache Xcode DerivedData (Tăng tốc build iOS cực mạnh)
-      - name: Cache Xcode DerivedData
-        if: matrix.platform == 'IOS'
-        uses: actions/cache@v4
-        with:
-          path: ~/Library/Developer/Xcode/DerivedData
-          key: >
-            xcode-deriveddata-${{ needs.init.outputs.env }}-
-            ${{ hashFiles('uniscore-mobile/ios/Podfile.lock', 'uniscore-mobile/package.json') }}-
-            ${{ hashFiles('uniscore-mobile/ios/**/*.swift', 'uniscore-mobile/ios/**/*.h', 'uniscore-mobile/ios/**/*.m') }}
-          restore-keys: |
-            xcode-deriveddata-${{ needs.init.outputs.env }}-
+          key: ${{ matrix.platform }}-cache-node-modules-${{ hashFiles('uniscore-mobile/package.json') }}
       # - name: Cache Pods
       #   if: matrix.platform == 'IOS'
       #   id: cache-pods
