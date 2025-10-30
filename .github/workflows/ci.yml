@@ -216,15 +216,15 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "23.7.0"
-      - name: Cache Xcode DerivedData
-        if: matrix.platform == 'IOS'
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/Library/Developer/Xcode/DerivedData
-          key: xcode-deriveddata-${{ needs.init.outputs.env }}-${{ hashFiles('uniscore-mobile/ios/Podfile.lock', 'uniscore-mobile/package.json') }}
-          restore-keys: |
-            xcode-deriveddata-${{ needs.init.outputs.env }}-
+      # - name: Cache Xcode DerivedData
+      #   if: matrix.platform == 'IOS'
+      #   uses: actions/cache@v4
+      #   with:
+      #     path: |
+      #       ~/Library/Developer/Xcode/DerivedData
+      #     key: xcode-deriveddata-${{ needs.init.outputs.env }}-${{ hashFiles('uniscore-mobile/ios/Podfile.lock', 'uniscore-mobile/package.json') }}
+      #     restore-keys: |
+      #       xcode-deriveddata-${{ needs.init.outputs.env }}-
       # - name: Cache node_modules
       #   id: cache-node-modules
       #   uses: actions/cache@v4
