@@ -97,7 +97,7 @@ jobs:
       - name: Setup Node v20
         uses: actions/setup-node@v4
         with:
-          node-version: "23.7.0"
+          node-version: "22.14.0"
       - name: Cache node_modules
         id: cache-node-modules
         uses: actions/cache@v4
@@ -112,15 +112,46 @@ jobs:
           cd uniscore-mobile
           yarn install --network-concurrency 1
 
-      - name: Run tests
-        run: echo "Testing..."
+      - name: Run unit tests
+        working-directory: uniscore-mobile
+        id: run-tests
+        run: |
+          echo "🧪 Running unit tests..."
+          if ! yarn test --ci --coverage --maxWorkers=2 2>&1 | tee test-output.log; then
+            echo ""
+            echo "❌ Unit test thất bại!"
+            echo ""
+            echo "📋 Tóm tắt lỗi:"
+            tail -50 test-output.log
+            exit 1
+          fi
+          echo "✅ All tests passed!"
+
+          # Extract test statistics
+          TEST_STATS=$(grep -A 3 "Test Suites:" test-output.log | tail -4 || echo "No stats available")
+          echo "test-stats<<EOF" >> $GITHUB_OUTPUT
+          echo "$TEST_STATS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Send telegram message success
+        if: ${{ success() }}
+        uses: UniscoreDev/macos-telegram-action@main
+        with:
+          type: topic
+          message: |
+            ✅ - Unit test passed: ${{ needs.init.outputs.message-information }}
+
+            ${{ steps.run-tests.outputs.test-stats }}
 
       - name: Send telegram message failure
         if: ${{ failure() }}
         uses: UniscoreDev/macos-telegram-action@main
         with:
           type: topic
-          message: "💥 - Thất bại rồi bạn hiền ${{ matrix.platform }}: ${{ needs.init.outputs.message-information }}"
+          message: |
+            💥 - Thất bại rồi bạn hiền: ${{ needs.init.outputs.message-information }}
+
+            ❌ Unit test thất bại! Check logs để xem chi tiết lỗi.
 
   deploy:
     name: Deployment ${{ matrix.format }}
@@ -157,7 +188,7 @@ jobs:
       - name: Setup Node v20
         uses: actions/setup-node@v4
         with:
-          node-version: "23.7.0"
+          node-version: "22.14.0"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -215,7 +246,7 @@ jobs:
       - name: Setup Node v18
         uses: actions/setup-node@v4
         with:
-          node-version: "23.7.0"
+          node-version: "22.14.0"
       # - name: Cache Xcode DerivedData
       #   if: matrix.platform == 'IOS'
       #   uses: actions/cache@v4
