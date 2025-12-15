@@ -133,6 +133,18 @@ jobs:
     needs: [init, prepare]
     timeout-minutes: 60
     steps:
+      - name: Free Disk Space (Ubuntu)
+        if: matrix.platform == 'ANDROID'
+        uses: jlumbroso/free-disk-space-action@v1.3.1
+        with:
+          tool-cache: false
+          android: false
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
       # Step 3: Clone the GitLab repository manually using git
       - name: Clone GitLab repository
         run: |
