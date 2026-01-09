@@ -88,6 +88,9 @@ jobs:
       matrix:
         include: ${{ fromJson(needs.init.outputs.matrix) }}
     steps:
+      - name: Capture Job Start Time
+        run: echo "JOB_START_TIME=$(date +%s)" >> $GITHUB_ENV
+
       - name: Clone the GitLab repository
         run: |
           git clone https://oauth2:$GITLAB_TOKEN@gitlab.com/unity1185445/uniscore-mobile.git
@@ -115,12 +118,50 @@ jobs:
       - name: Run tests
         run: echo "Testing..."
 
+      - name: Analyze Failure with AI
+        if: ${{ failure() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          # 1. Get the failed job logs (limit to last 200 lines)
+          LOGS=$(gh run view ${{ github.run_id }} --log-failed | tail -n 200)
+          
+          # 2. Escape logs for JSON
+          ESCAPED_LOGS=$(echo "$LOGS" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
+
+          # 3. Send to Gemini for analysis (3-tier fallback from your list: flash-latest -> flash-lite-latest -> 2.0-flash-lite)
+          PROMPT="Hãy phân tích các log lỗi GitHub Action sau đây và cung cấp một bản tóm tắt ngắn gọn về những gì đã sai và cách khắc phục bằng tiếng Việt. Giữ nội dung dưới 200 từ. Trả về kết quả dưới dạng text thuần túy, không dùng markdown quá phức tạp.\n\nLog:\n$ESCAPED_LOGS"
+          
+          ANALYSIS=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=$GEMINI_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{ \"contents\": [{ \"parts\": [{ \"text\": \"$PROMPT\" }] }] }" | jq -r '.candidates[0].content.parts[0].text // empty')
+
+          if [[ -z "$ANALYSIS" ]]; then
+            ANALYSIS=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key=$GEMINI_API_KEY" \
+              -H "Content-Type: application/json" \
+              -d "{ \"contents\": [{ \"parts\": [{ \"text\": \"$PROMPT\" }] }] }" | jq -r '.candidates[0].content.parts[0].text // empty')
+          fi
+
+          if [[ -z "$ANALYSIS" ]]; then
+            ANALYSIS=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=$GEMINI_API_KEY" \
+              -H "Content-Type: application/json" \
+              -d "{ \"contents\": [{ \"parts\": [{ \"text\": \"$PROMPT\" }] }] }" | jq -r '.candidates[0].content.parts[0].text // "Không thể phân tích lỗi lúc này."')
+          fi
+          
+          # 4. Save analysis to a file
+          echo "$ANALYSIS" > ai_analysis_prepare.txt
+
       - name: Send telegram message failure
         if: ${{ failure() }}
         uses: UniscoreDev/macos-telegram-action@main
         with:
           type: topic
-          message: "💥 - Thất bại rồi bạn hiền ${{ matrix.platform }}: ${{ needs.init.outputs.message-information }}"
+          message: |
+            💥 - Thất bại rồi bạn hiền ${{ matrix.platform }}: ${{ needs.init.outputs.message-information }}
+            
+            🤖 **Phân tích AI:**
+            $(cat ai_analysis_prepare.txt 2>/dev/null || echo "Không có phân tích nào.")
 
   deploy:
     name: Deployment ${{ matrix.format }}
@@ -132,6 +173,8 @@ jobs:
     runs-on: ${{ matrix.name }}
     needs: [init, prepare]
     timeout-minutes: 60
+    env:
+      START_TIME: ${{ github.event.repository.updated_at }} # Placeholder, will set actual start time in steps
     steps:
       - name: Free Disk Space (Ubuntu)
         if: matrix.platform == 'ANDROID'
@@ -144,6 +187,9 @@ jobs:
           large-packages: true
           docker-images: true
           swap-storage: true
+
+      - name: Set Start Time
+        run: echo "JOB_START_TIME=$(date +%s)" >> $GITHUB_ENV
 
       # Step 3: Clone the GitLab repository manually using git
       - name: Clone GitLab repository
@@ -346,23 +392,138 @@ jobs:
         working-directory: uniscore-mobile
         run: bundle exec fastlane android beta
 
+      - name: Generate Release Notes & Stats
+        if: ${{ success() }}
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        working-directory: uniscore-mobile
+        run: |
+          # 1. Get Commits (last 10 commits or since last tag)
+          COMMITS=$(git log -n 10 --pretty=format:"- %s")
+          
+          # 2. Escape for JSON
+          ESCAPED_COMMITS=$(echo "$COMMITS" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
+
+          # 3. AI Generate Release Notes (3-tier fallback from your list: flash-latest -> flash-lite-latest -> 2.0-flash-lite)
+          PROMPT="Dựa trên danh sách commit sau, hãy viết một bản tóm tắt 'Có gì mới' ngắn gọn, vui vẻ bằng tiếng Việt (bullet points). Không dùng markdown phức tạp.\n\nCommits:\n$ESCAPED_COMMITS"
+          
+          RELEASE_NOTES=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=$GEMINI_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{ \"contents\": [{ \"parts\": [{ \"text\": \"$PROMPT\" }] }] }" | jq -r '.candidates[0].content.parts[0].text // empty')
+
+          if [[ -z "$RELEASE_NOTES" ]]; then
+            RELEASE_NOTES=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key=$GEMINI_API_KEY" \
+              -H "Content-Type: application/json" \
+              -d "{ \"contents\": [{ \"parts\": [{ \"text\": \"$PROMPT\" }] }] }" | jq -r '.candidates[0].content.parts[0].text // empty')
+          fi
+
+          if [[ -z "$RELEASE_NOTES" ]]; then
+            RELEASE_NOTES=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=$GEMINI_API_KEY" \
+              -H "Content-Type: application/json" \
+              -d "{ \"contents\": [{ \"parts\": [{ \"text\": \"$PROMPT\" }] }] }" | jq -r '.candidates[0].content.parts[0].text // "Cập nhật hệ thống và sửa lỗi vặt."')
+          fi
+          echo "$RELEASE_NOTES" > ../release_notes.txt
+
+          # 4. Calculate Build Stats
+          END_TIME=$(date +%s)
+          DURATION=$((END_TIME - JOB_START_TIME))
+          MINUTES=$((DURATION / 60))
+          SECONDS=$((DURATION % 60))
+          echo "${MINUTES}m ${SECONDS}s" > ../build_duration.txt
+
+          # 5. Get File Size
+          if [[ "${{ matrix.platform }}" == "ANDROID" ]]; then
+            FILE_PATH=$(find android/app/build/outputs -name "*.apk" -o -name "*.aab" | head -n 1)
+          else
+            FILE_PATH=$(find ios/build -name "*.ipa" | head -n 1)
+          fi
+          
+          if [[ -f "$FILE_PATH" ]]; then
+            du -sh "$FILE_PATH" | cut -f1 > ../build_size.txt
+          else
+            echo "N/A" > ../build_size.txt
+          fi
+
+          # 7. AI Build Mood
+          MOOD_PROMPT="Dựa trên các commit sau, hãy đặt một cái tên 'hài hước, lầy lội' bằng tiếng Việt cho bản build này kèm theo emoji (ví dụ: 'Bản build chạy bằng niềm tin 🤡' hoặc 'Siêu nhân sửa bug 🦸‍♂️'). Chỉ trả về cái tên, không thêm gì khác.\n\nCommits:\n$ESCAPED_COMMITS"
+          BUILD_MOOD=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=$GEMINI_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{ \"contents\": [{ \"parts\": [{ \"text\": \"$MOOD_PROMPT\" }] }] }" | jq -r '.candidates[0].content.parts[0].text // "Bản build ẩn danh 🎭"')
+          echo "$BUILD_MOOD" > ../build_mood.txt
+
       - name: Send telegram message for iOS
-        if: ${{ matrix.platform == 'IOS' }}
+        if: ${{ matrix.platform == 'IOS' && success() }}
         uses: UniscoreDev/macos-telegram-action@main
         with:
           type: topic
-          message: "✅ - Build thành công ${{ matrix.format }} rồi hàng đã có trên TestFlight: ${{ needs.init.outputs.message-information }}"
+          message: |
+            🚀 **$(cat build_mood.txt 2>/dev/null || echo "Build Success")**
+            ✅ - Build thành công ${{ matrix.format }} rồi hàng đã có trên TestFlight: ${{ needs.init.outputs.message-information }}
+            
+            📝 **Có gì mới:**
+            $(cat release_notes.txt 2>/dev/null || echo "- Cập nhật hệ thống.")
+            
+            📊 **Thông số build:**
+            - 📦 Dung lượng: $(cat build_size.txt 2>/dev/null || echo "N/A")
+            - ⏱️ Thời gian: $(cat build_duration.txt 2>/dev/null || echo "N/A")
 
       - name: Send telegram message for Android
-        if: ${{ matrix.platform == 'ANDROID' }}
+        if: ${{ matrix.platform == 'ANDROID' && success() }}
         uses: UniscoreDev/macos-telegram-action@main
         with:
           type: topic
-          message: "✅ - Build thành công ${{ matrix.format }} rồi hàng đã có trên App Distribution: ${{ needs.init.outputs.message-information }}"
+          message: |
+            🚀 **$(cat build_mood.txt 2>/dev/null || echo "Build Success")**
+            ✅ - Build thành công ${{ matrix.format }} rồi hàng đã có trên App Distribution: ${{ needs.init.outputs.message-information }}
+            
+            📝 **Có gì mới:**
+            $(cat release_notes.txt 2>/dev/null || echo "- Cập nhật hệ thống.")
+            
+            📊 **Thông số build:**
+            - 📦 Dung lượng: $(cat build_size.txt 2>/dev/null || echo "N/A")
+            - ⏱️ Thời gian: $(cat build_duration.txt 2>/dev/null || echo "N/A")
+
+      - name: Analyze Failure with AI
+        if: ${{ failure() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          # 1. Get the failed job logs (limit to last 200 lines to avoid token limits)
+          LOGS=$(gh run view ${{ github.run_id }} --log-failed | tail -n 200)
+          
+          # 2. Escape logs for JSON
+          ESCAPED_LOGS=$(echo "$LOGS" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
+
+          # 3. Send to Gemini for analysis (3-tier fallback from your list: flash-latest -> flash-lite-latest -> 2.0-flash-lite)
+          PROMPT="Hãy phân tích các log lỗi GitHub Action sau đây và cung cấp một bản tóm tắt ngắn gọn về những gì đã sai và cách khắc phục bằng tiếng Việt. Giữ nội dung dưới 200 từ. Trả về kết quả dưới dạng text thuần túy, không dùng markdown quá phức tạp.\n\nLog:\n$ESCAPED_LOGS"
+          
+          ANALYSIS=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=$GEMINI_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{ \"contents\": [{ \"parts\": [{ \"text\": \"$PROMPT\" }] }] }" | jq -r '.candidates[0].content.parts[0].text // empty')
+
+          if [[ -z "$ANALYSIS" ]]; then
+            ANALYSIS=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key=$GEMINI_API_KEY" \
+              -H "Content-Type: application/json" \
+              -d "{ \"contents\": [{ \"parts\": [{ \"text\": \"$PROMPT\" }] }] }" | jq -r '.candidates[0].content.parts[0].text // empty')
+          fi
+
+          if [[ -z "$ANALYSIS" ]]; then
+            ANALYSIS=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=$GEMINI_API_KEY" \
+              -H "Content-Type: application/json" \
+              -d "{ \"contents\": [{ \"parts\": [{ \"text\": \"$PROMPT\" }] }] }" | jq -r '.candidates[0].content.parts[0].text // "Không thể phân tích lỗi lúc này."')
+          fi
+          
+          # 4. Save analysis to a file to be read by the next step
+          echo "$ANALYSIS" > ai_analysis.txt
 
       - name: Send telegram message failure
         if: ${{ failure() }}
         uses: UniscoreDev/macos-telegram-action@main
         with:
           type: topic
-          message: "💥 - [${{ matrix.format }}] Thất bại: Có gì đó sai sai rồi, check lại nhé : ${{ needs.init.outputs.message-information }}"
+          message: |
+            💥 - [${{ matrix.format }}] Thất bại rồi đại ca! Check lại nhé: ${{ needs.init.outputs.message-information }}
+            
+            🔍 **Phân tích AI:**
+            $(cat ai_analysis.txt 2>/dev/null || echo "Không có phân tích nào.")
