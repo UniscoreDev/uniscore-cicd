@@ -459,7 +459,6 @@ jobs:
           message: |
             ✅ - Build thành công ${{ matrix.format }} rồi hàng đã có trên TestFlight:
             ${{ needs.init.outputs.message-information }}
-            - Link action: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
       - name: Send telegram message for Android
         if: ${{ matrix.platform == 'ANDROID' && success() }}
@@ -469,7 +468,6 @@ jobs:
           message: |
             ✅ - Build thành công ${{ matrix.format }} rồi hàng đã có trên App Distribution:
             ${{ needs.init.outputs.message-information }}
-            - Link action: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
       # Combined "What's New" notification is sent by 'notify' job after all platforms complete
 
@@ -635,14 +633,12 @@ jobs:
             echo "📱 **iOS:** TestFlight"
             echo "🤖 **Android:** App Distribution"
             echo ""
-            echo "📦 **Phiên bản:** ${VERSION_INFO}"
+            echo "${VERSION_INFO}"
             echo "🌍 **Môi trường:** ${ENV_EMOJI}"
             echo "🕐 **Thời gian:** ${BUILD_TIME}"
             echo ""
             echo "📝 **Có gì mới:**"
             echo "${RELEASE_NOTES}"
-            echo ""
-            echo "🔗 Xem chi tiết: ${RUN_URL}"
             echo "EOF"
           } >> $GITHUB_ENV
 
