@@ -458,17 +458,34 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # 1. Get the failed job logs (limit to last 200 lines)
-          LOGS=$(gh run view ${{ github.run_id }} --log-failed | tail -n 200)
+          # 1. Try multiple methods to get error logs
+          echo "🔍 Attempting to capture failure logs..."
           
-          # 2. Build Prompt
-          PROMPT="Hãy phân tích các log lỗi GitHub Action sau đây và cung cấp một bản tóm tắt ngắn gọn về những gì đã sai và cách khắc phục bằng tiếng Việt. Giữ nội dung dưới 200 từ. Trả về kết quả dưới dạng text thuần túy, không dùng markdown quá phức tạp.\n\nLog:\n$LOGS"
+          # Method 1: Get failed step logs from current run
+          LOGS=""
+          LOGS=$(gh run view ${{ github.run_id }} --log-failed 2>/dev/null | tail -n 150 || echo "")
+          
+          # Method 2: If empty, try to get recent logs from the run
+          if [[ -z "$LOGS" || ${#LOGS} -lt 50 ]]; then
+            LOGS=$(gh run view ${{ github.run_id }} --log 2>/dev/null | grep -i -A 5 -B 2 "error\|failed\|exception\|fatal" | tail -n 150 || echo "")
+          fi
+          
+          # Method 3: Fallback - provide context about the failing job
+          if [[ -z "$LOGS" || ${#LOGS} -lt 50 ]]; then
+            LOGS="Build ${{ matrix.format }} for ${{ matrix.platform }} failed. Run ID: ${{ github.run_id }}. Please check the workflow run for details."
+          fi
+          
+          # Debug: Show what we captured
+          echo "📋 Captured ${#LOGS} characters of logs"
+          
+          # 2. Build Prompt with specific instructions
+          PROMPT="Bạn là AI chuyên phân tích lỗi CI/CD. Phân tích log lỗi sau và trả lời bằng tiếng Việt:\n\n1. **Lỗi gì?** (1 dòng ngắn gọn)\n2. **Nguyên nhân:** (1-2 dòng)\n3. **Cách sửa:** (1-2 dòng cụ thể)\n\nGiữ tổng cộng dưới 150 từ. Không dùng markdown phức tạp.\n\nLog:\n$LOGS"
           
           # 3. Build JSON payload using jq
           jq -n --arg prompt "$PROMPT" '{contents: [{parts: [{text: $prompt}]}]}' > payload_fail.json
 
           # 4. Send to Gemini for analysis (3-tier fallback)
-          ANALYSIS=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=$GEMINI_API_KEY" \
+          ANALYSIS=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$GEMINI_API_KEY" \
             -H "Content-Type: application/json" \
             -d @payload_fail.json | jq -r '.candidates[0].content.parts[0].text // empty')
 
@@ -479,24 +496,45 @@ jobs:
           fi
 
           if [[ -z "$ANALYSIS" || "$ANALYSIS" == "null" ]]; then
-            ANALYSIS=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=$GEMINI_API_KEY" \
-              -H "Content-Type: application/json" \
-              -d @payload_fail.json | jq -r '.candidates[0].content.parts[0].text // "Không thể phân tích lỗi lúc này."')
+            ANALYSIS="⚠️ Không thể phân tích tự động. Vui lòng xem log trực tiếp."
           fi
           
-          # 5. Save analysis to a file
-          echo "$ANALYSIS" > ai_analysis.txt
+          # Truncate analysis to fit Telegram limit
+          ANALYSIS="${ANALYSIS:0:500}"
+
+          # 5. Generate funny failure mood
+          FAIL_MOOD_PROMPT="Đặt một cái tên hài hước, lầy lội bằng tiếng Việt cho một build bị lỗi kèm emoji buồn (ví dụ: 'Bản build ra đi không lời từ biệt 💀' hoặc 'Bug 1 - Dev 0 😭'). Chỉ trả về cái tên, tối đa 40 ký tự."
+          jq -n --arg prompt "$FAIL_MOOD_PROMPT" '{contents: [{parts: [{text: $prompt}]}]}' > payload_fail_mood.json
+          
+          FAIL_MOOD=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$GEMINI_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d @payload_fail_mood.json | jq -r '.candidates[0].content.parts[0].text // "Build đã hy sinh 💀"')
+          FAIL_MOOD="${FAIL_MOOD:0:50}"
+
+          # 6. Build complete failure message
+          VERSION_INFO="${{ needs.init.outputs.message-information }}"
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          
+          {
+            echo "TELEGRAM_FAIL_MESSAGE<<EOF"
+            echo "💥 **${FAIL_MOOD}**"
+            echo ""
+            echo "❌ **Build thất bại:** ${{ matrix.format }} (${{ matrix.platform }})"
+            echo "📦 **Phiên bản:** ${VERSION_INFO}"
+            echo ""
+            echo "🤖 **Phân tích AI:**"
+            echo "${ANALYSIS}"
+            echo ""
+            echo "🔗 Xem chi tiết: ${RUN_URL}"
+            echo "EOF"
+          } >> $GITHUB_ENV
 
       - name: Send telegram message failure
         if: ${{ failure() }}
         uses: UniscoreDev/macos-telegram-action@main
         with:
           type: topic
-          message: |
-            💥 - [${{ matrix.format }}] Thất bại rồi đại ca! Check lại nhé: ${{ needs.init.outputs.message-information }}
-            
-            🔍 **Phân tích AI:**
-            $(cat ai_analysis.txt 2>/dev/null || echo "Không có phân tích nào.")
+          message: ${{ env.TELEGRAM_FAIL_MESSAGE }}
 
   notify:
     name: Send Success Notification
@@ -551,20 +589,39 @@ jobs:
 
           # 4. Build complete message (ensure all static parts are always present)
           VERSION_INFO="${{ needs.init.outputs.message-information }}"
+          ENV="${{ needs.init.outputs.env }}"
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          
+          # Get environment emoji
+          case "$ENV" in
+            dev) ENV_EMOJI="🛠️ Development" ;;
+            stag) ENV_EMOJI="🧪 Staging" ;;
+            beta) ENV_EMOJI="🎯 Beta" ;;
+            prod) ENV_EMOJI="🚀 Production" ;;
+            *) ENV_EMOJI="📦 $ENV" ;;
+          esac
+          
+          # Get current timestamp in Vietnam timezone
+          BUILD_TIME=$(TZ='Asia/Ho_Chi_Minh' date '+%d/%m/%Y %H:%M')
           
           # Construct the full message with proper escaping for multiline
           {
             echo "TELEGRAM_MESSAGE<<EOF"
-            echo "🚀 **${BUILD_MOOD}**"
+            echo "🎉 **${BUILD_MOOD}**"
             echo ""
             echo "✅ **ĐÃ SẴN SÀNG TRÊN CẢ iOS VÀ ANDROID!**"
-            echo "📱 iOS: TestFlight"
-            echo "🤖 Android: App Distribution"
+            echo ""
+            echo "📱 **iOS:** TestFlight"
+            echo "🤖 **Android:** App Distribution"
             echo ""
             echo "📦 **Phiên bản:** ${VERSION_INFO}"
+            echo "🌍 **Môi trường:** ${ENV_EMOJI}"
+            echo "🕐 **Thời gian:** ${BUILD_TIME}"
             echo ""
-            echo "📝 **Có gì mới trong phiên bản này:**"
+            echo "📝 **Có gì mới:**"
             echo "${RELEASE_NOTES}"
+            echo ""
+            echo "🔗 Xem chi tiết: ${RUN_URL}"
             echo "EOF"
           } >> $GITHUB_ENV
 
