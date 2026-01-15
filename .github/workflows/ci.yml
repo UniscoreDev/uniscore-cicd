@@ -451,7 +451,27 @@ jobs:
             -d @payload_mood.json | jq -r '.candidates[0].content.parts[0].text // "Bản build ẩn danh 🎭"')
           echo "$BUILD_MOOD" > ../build_mood.txt
 
-      # Success notifications moved to 'notify' job below
+      - name: Send telegram message for iOS
+        if: ${{ matrix.platform == 'IOS' && success() }}
+        uses: UniscoreDev/macos-telegram-action@main
+        with:
+          type: topic
+          message: |
+            ✅ - Build thành công ${{ matrix.format }} rồi hàng đã có trên TestFlight:
+            ${{ needs.init.outputs.message-information }}
+            - Link action: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      - name: Send telegram message for Android
+        if: ${{ matrix.platform == 'ANDROID' && success() }}
+        uses: UniscoreDev/macos-telegram-action@main
+        with:
+          type: topic
+          message: |
+            ✅ - Build thành công ${{ matrix.format }} rồi hàng đã có trên App Distribution:
+            ${{ needs.init.outputs.message-information }}
+            - Link action: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      # Combined "What's New" notification is sent by 'notify' job after all platforms complete
 
       - name: Analyze Failure with AI
         if: ${{ failure() }}
