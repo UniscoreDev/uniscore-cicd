@@ -576,7 +576,7 @@ jobs:
           COMMITS=$(git log -n 10 --pretty=format:"- %s")
           
           # 2. AI Generate Release Notes (3-tier fallback) - max 400 chars
-          PROMPT="Dựa trên danh sách commit sau, hãy viết một bản tóm tắt 'Có gì mới' ngắn gọn, vui vẻ bằng tiếng Việt (tối đa 4 bullet points, mỗi dòng tối đa 50 ký tự). Không dùng markdown phức tạp, không đánh số.\n\nCommits:\n$COMMITS"
+          PROMPT="Dựa trên danh sách commit sau, hãy viết một bản tóm tắt 'Có gì mới' ngắn gọn, vui vẻ bằng tiếng Việt. Yêu cầu: bắt đầu mỗi dòng bằng dấu gạch đầu dòng (-), tối đa 4 dòng, mỗi dòng tối đa 50 ký tự. Không dùng markdown phức tạp, không đánh số.\n\nCommits:\n$COMMITS"
           jq -n --arg prompt "$PROMPT" '{contents: [{parts: [{text: $prompt}]}]}' > payload_notes.json
 
           RELEASE_NOTES=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=$GEMINI_API_KEY" \
@@ -595,7 +595,8 @@ jobs:
               -d @payload_notes.json | jq -r '.candidates[0].content.parts[0].text // "- Cập nhật hệ thống và sửa lỗi."')
           fi
           
-          # Truncate release notes (max 400 chars to leave room for other content)
+          # Truncate and clean release notes
+          RELEASE_NOTES=$(echo "$RELEASE_NOTES" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
           RELEASE_NOTES="${RELEASE_NOTES:0:400}"
 
           # 3. AI Build Mood (max 60 chars)
