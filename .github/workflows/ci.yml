@@ -75,33 +75,10 @@ jobs:
           echo "matrix: ${{ steps.set-matrix.outputs.value }}"
           echo "env: ${{ steps.set-env.outputs.value }}"
       - name: Send telegram message
-        env:
-          MESSAGE: "🎬 - Bắt đầu build: ${{ steps.get-message-information.outputs.value }}\n- Thanh niên ấn build 👨‍💻: ${{ env.COMMITTER_NAME || 'Unknown' }}"
-          RUN_URL: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-        run: |
-          # Build JSON payload using jq for safety
-          jq -n --arg chat_id "${TELEGRAM_GROUP_ID}" \
-                --arg thread_id "${TELEGRAM_TOPIC_ID}" \
-                --arg text "$(echo -e "$MESSAGE")" \
-                --arg button_text "❌ Hủy nha không build nữa" \
-                --arg url "${RUN_URL}" \
-                '{
-                  chat_id: $chat_id,
-                  message_thread_id: $thread_id,
-                  text: $text,
-                  reply_markup: {
-                    inline_keyboard: [[
-                      {
-                        text: $button_text,
-                        url: $url
-                      }
-                    ]]
-                  }
-                }' > payload.json
-
-          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -H "Content-Type: application/json" \
-            -d @payload.json
+        uses: UniscoreDev/macos-telegram-action@main
+        with:
+          type: topic
+          message: "🎬 - Bắt đầu build: ${{ steps.get-message-information.outputs.value }}\n- Thanh niên ấn build 👨‍💻: ${{ env.COMMITTER_NAME || 'Unknown' }}\n"
 
   prepare:
     name: Prepare ${{ matrix.format }}
@@ -671,26 +648,3 @@ jobs:
           type: topic
           message: ${{ env.TELEGRAM_MESSAGE }}
 
-  cleanup:
-    name: Cleanup & Cancel Notification
-    runs-on: ubuntu-latest
-    needs: [init]
-    if: ${{ always() && cancelled() }}
-    steps:
-      - name: Send cancellation message
-        env:
-          VERSION_INFO: ${{ needs.init.outputs['message-information'] }}
-          RUN_URL: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-        run: |
-          # Construct the message
-          MESSAGE="🚫 **Workflow đã bị hủy!**\n\n- Trạng thái: Đã dừng build theo yêu cầu.\n${VERSION_INFO}\n- Link action: ${RUN_URL}"
-          
-          # Build JSON payload using jq for safety
-          jq -n --arg text "$(echo -e "$MESSAGE")" \
-                --arg chat_id "${TELEGRAM_GROUP_ID}" \
-                --arg thread_id "${TELEGRAM_TOPIC_ID}" \
-                '{chat_id: $chat_id, message_thread_id: $thread_id, text: $text}' > payload.json
-
-          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -H "Content-Type: application/json" \
-            -d @payload.json
