@@ -75,10 +75,33 @@ jobs:
           echo "matrix: ${{ steps.set-matrix.outputs.value }}"
           echo "env: ${{ steps.set-env.outputs.value }}"
       - name: Send telegram message
-        uses: UniscoreDev/macos-telegram-action@main
-        with:
-          type: topic
-          message: "🎬 - Bắt đầu build: ${{ steps.get-message-information.outputs.value }}\n- Thanh niên ấn build 👨‍💻: ${{ env.COMMITTER_NAME || 'Unknown' }}\n"
+        env:
+          MESSAGE: "🎬 - Bắt đầu build: ${{ steps.get-message-information.outputs.value }}\n- Thanh niên ấn build 👨‍💻: ${{ env.COMMITTER_NAME || 'Unknown' }}"
+          RUN_URL: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        run: |
+          # Build JSON payload using jq for safety
+          jq -n --arg chat_id "${TELEGRAM_GROUP_ID}" \
+                --arg thread_id "${TELEGRAM_TOPIC_ID}" \
+                --arg text "$(echo -e "$MESSAGE")" \
+                --arg button_text "❌ Hủy nha không build nữa" \
+                --arg url "${RUN_URL}" \
+                '{
+                  chat_id: $chat_id,
+                  message_thread_id: $thread_id,
+                  text: $text,
+                  reply_markup: {
+                    inline_keyboard: [[
+                      {
+                        text: $button_text,
+                        url: $url
+                      }
+                    ]]
+                  }
+                }' > payload.json
+
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d @payload.json
 
   prepare:
     name: Prepare ${{ matrix.format }}
@@ -573,8 +596,8 @@ jobs:
           # 1. Get Commits (last 10 commits)
           COMMITS=$(git log -n 10 --pretty=format:"- %s")
           
-          # 2. AI Generate Release Notes (3-tier fallback) - max 400 chars
-          PROMPT="Dựa trên danh sách commit sau, hãy viết một bản tóm tắt 'Có gì mới' ngắn gọn, vui vẻ bằng tiếng Việt. Yêu cầu: bắt đầu mỗi dòng bằng dấu gạch đầu dòng (-), tối đa 4 dòng, mỗi dòng tối đa 50 ký tự. Không dùng markdown phức tạp, không đánh số.\n\nCommits:\n$COMMITS"
+          # 2. AI Generate Release Notes (3-tier fallback) - max 1500 chars
+          PROMPT="Dựa trên danh sách commit sau, hãy viết một bản tóm tắt 'Có gì mới' ngắn gọn, vui vẻ bằng tiếng Việt. Yêu cầu: bắt đầu mỗi dòng bằng dấu gạch đầu dòng (-), tối đa 10 dòng, mỗi dòng tối đa 100 ký tự. Không dùng markdown phức tạp, không đánh số.\n\nCommits:\n$COMMITS"
           jq -n --arg prompt "$PROMPT" '{contents: [{parts: [{text: $prompt}]}]}' > payload_notes.json
 
           RELEASE_NOTES=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=$GEMINI_API_KEY" \
@@ -595,7 +618,7 @@ jobs:
           
           # Truncate and clean release notes
           RELEASE_NOTES=$(echo "$RELEASE_NOTES" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-          RELEASE_NOTES="${RELEASE_NOTES:0:400}"
+          RELEASE_NOTES="${RELEASE_NOTES:0:1500}"
 
           # 3. AI Build Mood (max 60 chars)
           MOOD_PROMPT="Dựa trên các commit sau, hãy đặt một cái tên 'hài hước, lầy lội' bằng tiếng Việt cho bản build này kèm theo emoji (ví dụ: 'Bản build chạy bằng niềm tin 🤡'). Chỉ trả về cái tên, tối đa 50 ký tự.\n\nCommits:\n$COMMITS"
@@ -647,3 +670,27 @@ jobs:
         with:
           type: topic
           message: ${{ env.TELEGRAM_MESSAGE }}
+
+  cleanup:
+    name: Cleanup & Cancel Notification
+    runs-on: ubuntu-latest
+    needs: [init]
+    if: ${{ always() && cancelled() }}
+    steps:
+      - name: Send cancellation message
+        env:
+          VERSION_INFO: ${{ needs.init.outputs['message-information'] }}
+          RUN_URL: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        run: |
+          # Construct the message
+          MESSAGE="🚫 **Workflow đã bị hủy!**\n\n- Trạng thái: Đã dừng build theo yêu cầu.\n${VERSION_INFO}\n- Link action: ${RUN_URL}"
+          
+          # Build JSON payload using jq for safety
+          jq -n --arg text "$(echo -e "$MESSAGE")" \
+                --arg chat_id "${TELEGRAM_GROUP_ID}" \
+                --arg thread_id "${TELEGRAM_TOPIC_ID}" \
+                '{chat_id: $chat_id, message_thread_id: $thread_id, text: $text}' > payload.json
+
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d @payload.json
