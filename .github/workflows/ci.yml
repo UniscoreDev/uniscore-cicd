@@ -401,7 +401,7 @@ jobs:
           COMMITS=$(git log -n 10 --pretty=format:"- %s")
           
           # 2. AI Generate Release Notes (3-tier fallback)
-          PROMPT="Dựa trên danh sách commit sau, hãy viết một bản tóm tắt 'Có gì mới' ngắn gọn, vui vẻ bằng tiếng Việt (bullet points). Không dùng markdown phức tạp.\n\nCommits:\n$COMMITS"
+          PROMPT="Dựa trên danh sách commit sau, hãy viết một bản tóm tắt 'Có gì mới' ngắn gọn, vui vẻ bằng tiếng Việt (tối đa 5 bullet points, mỗi dòng tối đa 60 ký tự). Không dùng markdown phức tạp.\n\nCommits:\n$COMMITS"
           jq -n --arg prompt "$PROMPT" '{contents: [{parts: [{text: $prompt}]}]}' > payload_notes.json
 
           RELEASE_NOTES=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=$GEMINI_API_KEY" \
@@ -419,7 +419,8 @@ jobs:
               -H "Content-Type: application/json" \
               -d @payload_notes.json | jq -r '.candidates[0].content.parts[0].text // "Cập nhật hệ thống và sửa lỗi vặt."')
           fi
-          echo "$RELEASE_NOTES" > ../release_notes.txt
+          # Truncate release notes to avoid Telegram limit (max 600 chars)
+          echo "${RELEASE_NOTES:0:600}" > ../release_notes.txt
 
           # 3. Calculate Build Stats
           END_TIME=$(date +%s)
@@ -450,37 +451,7 @@ jobs:
             -d @payload_mood.json | jq -r '.candidates[0].content.parts[0].text // "Bản build ẩn danh 🎭"')
           echo "$BUILD_MOOD" > ../build_mood.txt
 
-      - name: Send telegram message for iOS
-        if: ${{ matrix.platform == 'IOS' && success() }}
-        uses: UniscoreDev/macos-telegram-action@main
-        with:
-          type: topic
-          message: |
-            🚀 **$(cat build_mood.txt 2>/dev/null || echo "Build Success")**
-            ✅ - Build thành công ${{ matrix.format }} rồi hàng đã có trên TestFlight: ${{ needs.init.outputs.message-information }}
-            
-            📝 **Có gì mới:**
-            $(cat release_notes.txt 2>/dev/null || echo "- Cập nhật hệ thống.")
-            
-            📊 **Thông số build:**
-            - 📦 Dung lượng: $(cat build_size.txt 2>/dev/null || echo "N/A")
-            - ⏱️ Thời gian: $(cat build_duration.txt 2>/dev/null || echo "N/A")
-
-      - name: Send telegram message for Android
-        if: ${{ matrix.platform == 'ANDROID' && success() }}
-        uses: UniscoreDev/macos-telegram-action@main
-        with:
-          type: topic
-          message: |
-            🚀 **$(cat build_mood.txt 2>/dev/null || echo "Build Success")**
-            ✅ - Build thành công ${{ matrix.format }} rồi hàng đã có trên App Distribution: ${{ needs.init.outputs.message-information }}
-            
-            📝 **Có gì mới:**
-            $(cat release_notes.txt 2>/dev/null || echo "- Cập nhật hệ thống.")
-            
-            📊 **Thông số build:**
-            - 📦 Dung lượng: $(cat build_size.txt 2>/dev/null || echo "N/A")
-            - ⏱️ Thời gian: $(cat build_duration.txt 2>/dev/null || echo "N/A")
+      # Success notifications moved to 'notify' job below
 
       - name: Analyze Failure with AI
         if: ${{ failure() }}
@@ -526,3 +497,79 @@ jobs:
             
             🔍 **Phân tích AI:**
             $(cat ai_analysis.txt 2>/dev/null || echo "Không có phân tích nào.")
+
+  notify:
+    name: Send Success Notification
+    runs-on: ubuntu-latest
+    needs: [init, deploy]
+    if: ${{ success() }}
+    steps:
+      - name: Clone GitLab repository
+        run: |
+          git clone https://oauth2:$GITLAB_TOKEN@gitlab.com/unity1185445/uniscore-mobile.git
+          cd uniscore-mobile
+          git checkout $REF_NAME
+
+      - name: Generate Release Notes & Build Message
+        id: generate-message
+        working-directory: uniscore-mobile
+        run: |
+          # 1. Get Commits (last 10 commits)
+          COMMITS=$(git log -n 10 --pretty=format:"- %s")
+          
+          # 2. AI Generate Release Notes (3-tier fallback) - max 400 chars
+          PROMPT="Dựa trên danh sách commit sau, hãy viết một bản tóm tắt 'Có gì mới' ngắn gọn, vui vẻ bằng tiếng Việt (tối đa 4 bullet points, mỗi dòng tối đa 50 ký tự). Không dùng markdown phức tạp, không đánh số.\n\nCommits:\n$COMMITS"
+          jq -n --arg prompt "$PROMPT" '{contents: [{parts: [{text: $prompt}]}]}' > payload_notes.json
+
+          RELEASE_NOTES=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=$GEMINI_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d @payload_notes.json | jq -r '.candidates[0].content.parts[0].text // empty')
+
+          if [[ -z "$RELEASE_NOTES" || "$RELEASE_NOTES" == "null" ]]; then
+            RELEASE_NOTES=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key=$GEMINI_API_KEY" \
+              -H "Content-Type: application/json" \
+              -d @payload_notes.json | jq -r '.candidates[0].content.parts[0].text // empty')
+          fi
+
+          if [[ -z "$RELEASE_NOTES" || "$RELEASE_NOTES" == "null" ]]; then
+            RELEASE_NOTES=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=$GEMINI_API_KEY" \
+              -H "Content-Type: application/json" \
+              -d @payload_notes.json | jq -r '.candidates[0].content.parts[0].text // "- Cập nhật hệ thống và sửa lỗi."')
+          fi
+          
+          # Truncate release notes (max 400 chars to leave room for other content)
+          RELEASE_NOTES="${RELEASE_NOTES:0:400}"
+
+          # 3. AI Build Mood (max 60 chars)
+          MOOD_PROMPT="Dựa trên các commit sau, hãy đặt một cái tên 'hài hước, lầy lội' bằng tiếng Việt cho bản build này kèm theo emoji (ví dụ: 'Bản build chạy bằng niềm tin 🤡'). Chỉ trả về cái tên, tối đa 50 ký tự.\n\nCommits:\n$COMMITS"
+          jq -n --arg prompt "$MOOD_PROMPT" '{contents: [{parts: [{text: $prompt}]}]}' > payload_mood.json
+          
+          BUILD_MOOD=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=$GEMINI_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d @payload_mood.json | jq -r '.candidates[0].content.parts[0].text // "Bản build ẩn danh 🎭"')
+          BUILD_MOOD="${BUILD_MOOD:0:60}"
+
+          # 4. Build complete message (ensure all static parts are always present)
+          VERSION_INFO="${{ needs.init.outputs.message-information }}"
+          
+          # Construct the full message with proper escaping for multiline
+          {
+            echo "TELEGRAM_MESSAGE<<EOF"
+            echo "🚀 **${BUILD_MOOD}**"
+            echo ""
+            echo "✅ **ĐÃ SẴN SÀNG TRÊN CẢ iOS VÀ ANDROID!**"
+            echo "📱 iOS: TestFlight"
+            echo "🤖 Android: App Distribution"
+            echo ""
+            echo "📦 **Phiên bản:** ${VERSION_INFO}"
+            echo ""
+            echo "📝 **Có gì mới trong phiên bản này:**"
+            echo "${RELEASE_NOTES}"
+            echo "EOF"
+          } >> $GITHUB_ENV
+
+      - name: Send combined Telegram notification
+        uses: UniscoreDev/macos-telegram-action@main
+        with:
+          type: topic
+          message: ${{ env.TELEGRAM_MESSAGE }}
