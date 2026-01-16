@@ -84,7 +84,7 @@ jobs:
                 --arg thread_id "${TELEGRAM_TOPIC_ID}" \
                 --arg text "$(echo -e "$MESSAGE")" \
                 --arg button_text "❌ Hủy workflow nha bro" \
-                --arg callback_data "cancel_run:${{ github.run_id }}" \
+                --arg callback_data "cancel_confirm:${{ github.run_id }}" \
                 '{
                   chat_id: $chat_id,
                   message_thread_id: $thread_id,
