@@ -180,14 +180,13 @@ jobs:
 
       - name: Send telegram message failure
         if: ${{ failure() }}
-        uses: UniscoreDev/macos-telegram-action@main
-        with:
-          type: topic
-          message: |
-            💥 - Thất bại rồi bạn hiền ${{ matrix.platform }}: ${{ needs.init.outputs.message-information }}
-            
-            🤖 **Phân tích AI:**
-            $(cat ai_analysis_prepare.txt 2>/dev/null || echo "Không có phân tích nào.")
+        run: |
+          MESSAGE="💥 <b>Thất bại rồi bạn hiền ${{ matrix.platform }}:</b> ${{ needs.init.outputs.message-information }}\n\n🤖 <b>Phân tích AI:</b>\n$(cat ai_analysis_prepare.txt 2>/dev/null || echo "Không có phân tích nào.")"
+          jq -n --arg chat_id "${TELEGRAM_GROUP_ID}" \
+                --arg thread_id "${TELEGRAM_TOPIC_ID}" \
+                --arg text "$(echo -e "$MESSAGE")" \
+                '{chat_id: $chat_id, message_thread_id: $thread_id, text: $text, parse_mode: "HTML", disable_web_page_preview: true}' > payload_fail_prepare.json
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" -H "Content-Type: application/json" -d @payload_fail_prepare.json
 
   deploy:
     name: Deployment ${{ matrix.format }}
@@ -594,10 +593,10 @@ jobs:
             -d @payload_fail.json
 
   notify:
-    name: Send Success Notification
+    name: Send Combined Notification
     runs-on: ubuntu-latest
     needs: [init, deploy]
-    if: ${{ success() }}
+    if: always() && !cancelled() && needs.init.result == 'success'
     steps:
       - name: Clone GitLab repository
         run: |
@@ -607,12 +606,14 @@ jobs:
 
       - name: Generate Release Notes & Build Message
         id: generate-message
+        env:
+          GH_TOKEN: ${{ github.token }}
         working-directory: uniscore-mobile
         run: |
           # 1. Get Commits (last 10 commits)
           COMMITS=$(git log -n 10 --pretty=format:"- %s")
           
-          # 2. AI Generate Release Notes (3-tier fallback) - max 1500 chars
+          # 2. AI Generate Release Notes
           PROMPT="Dựa trên danh sách commit sau, hãy viết một bản tóm tắt 'Có gì mới' ngắn gọn, vui vẻ bằng tiếng Việt. Yêu cầu: bắt đầu mỗi dòng bằng dấu gạch đầu dòng (-), tối đa 10 dòng, mỗi dòng tối đa 100 ký tự. Không dùng markdown phức tạp, không đánh số.\n\nCommits:\n$COMMITS"
           jq -n --arg prompt "$PROMPT" '{contents: [{parts: [{text: $prompt}]}]}' > payload_notes.json
 
@@ -632,11 +633,10 @@ jobs:
               -d @payload_notes.json | jq -r '.candidates[0].content.parts[0].text // "- Cập nhật hệ thống và sửa lỗi."')
           fi
           
-          # Truncate and clean release notes
           RELEASE_NOTES=$(echo "$RELEASE_NOTES" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
           RELEASE_NOTES="${RELEASE_NOTES:0:1500}"
 
-          # 3. AI Build Mood (max 60 chars)
+          # 3. AI Build Mood
           MOOD_PROMPT="Dựa trên các commit sau, hãy đặt một cái tên 'hài hước, lầy lội' bằng tiếng Việt cho bản build này kèm theo emoji (ví dụ: 'Bản build chạy bằng niềm tin 🤡'). Chỉ trả về cái tên, tối đa 50 ký tự.\n\nCommits:\n$COMMITS"
           jq -n --arg prompt "$MOOD_PROMPT" '{contents: [{parts: [{text: $prompt}]}]}' > payload_mood.json
           
@@ -645,12 +645,27 @@ jobs:
             -d @payload_mood.json | jq -r '.candidates[0].content.parts[0].text // "Bản build ẩn danh 🎭"')
           BUILD_MOOD="${BUILD_MOOD:0:60}"
 
-          # 4. Build complete message (ensure all static parts are always present)
+          # 4. Determine Platform Status
+          # We check the status of the 'deploy' jobs using GitHub CLI
+          JOBS_JSON=$(gh run view ${{ github.run_id }} --json jobs)
+          
+          IOS_STATUS="❌ Thất bại"
+          ANDROID_STATUS="❌ Thất bại"
+          
+          # Check if any job with 'Deployment IPA' succeeded
+          if echo "$JOBS_JSON" | jq -e '.jobs[] | select(.name | contains("Deployment IPA")) | select(.conclusion == "success")' > /dev/null; then
+            IOS_STATUS="✅ Sẵn sàng"
+          fi
+          
+          # Check if any job with 'Deployment APK' or 'Deployment AAB' succeeded
+          if echo "$JOBS_JSON" | jq -e '.jobs[] | select(.name | contains("Deployment APK") or contains("Deployment AAB")) | select(.conclusion == "success")' > /dev/null; then
+            ANDROID_STATUS="✅ Sẵn sàng"
+          fi
+
+          # 5. Build complete message
           VERSION_INFO="${{ needs.init.outputs.message-information }}"
           ENV="${{ needs.init.outputs.env }}"
-          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           
-          # Get environment emoji
           case "$ENV" in
             dev) ENV_EMOJI="🛠️ Development" ;;
             stag) ENV_EMOJI="🧪 Staging" ;;
@@ -659,18 +674,14 @@ jobs:
             *) ENV_EMOJI="📦 $ENV" ;;
           esac
           
-          # Get current timestamp in Vietnam timezone
           BUILD_TIME=$(TZ='Asia/Ho_Chi_Minh' date '+%d/%m/%Y %H:%M')
           
-          # Construct the full message with proper escaping for multiline
           {
             echo "TELEGRAM_MESSAGE<<EOF"
             echo "🎉 <b>${BUILD_MOOD}</b>"
             echo ""
-            echo "✅ <b>ĐÃ SẴN SÀNG TRÊN CẢ iOS VÀ ANDROID!</b>"
-            echo ""
-            echo "📱 <b>iOS:</b> TestFlight"
-            echo "🤖 <b>Android:</b> App Distribution"
+            echo "📱 <b>iOS:</b> ${IOS_STATUS}"
+            echo "🤖 <b>Android:</b> ${ANDROID_STATUS}"
             echo ""
             echo "${VERSION_INFO}"
             echo "🌍 <b>Môi trường:</b> ${ENV_EMOJI}"
