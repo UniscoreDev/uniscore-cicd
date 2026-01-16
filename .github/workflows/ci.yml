@@ -702,19 +702,23 @@ jobs:
   cleanup:
     name: Cleanup & Cancel Notification
     runs-on: ubuntu-latest
-    if: ${{ always() && cancelled() }}
+    if: cancelled()
     steps:
       - name: Send cancellation message
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ vars.TELEGRAM_GROUP_ID }}
+          THREAD_ID: ${{ vars.TELEGRAM_TOPIC_ID }}
         run: |
           MESSAGE="🚫 <b>Workflow đã bị hủy thành công!</b>"
           
           # Build JSON payload using jq for safety
           jq -n --arg text "$(echo -e "$MESSAGE")" \
-                --arg chat_id "${TELEGRAM_GROUP_ID}" \
-                --arg thread_id "${TELEGRAM_TOPIC_ID}" \
+                --arg chat_id "$CHAT_ID" \
+                --arg thread_id "$THREAD_ID" \
                 '{chat_id: $chat_id, message_thread_id: $thread_id, text: $text, parse_mode: "HTML", disable_web_page_preview: true}' > payload.json
 
-          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+          curl -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             -H "Content-Type: application/json" \
             -d @payload.json
 
