@@ -75,10 +75,35 @@ jobs:
           echo "matrix: ${{ steps.set-matrix.outputs.value }}"
           echo "env: ${{ steps.set-env.outputs.value }}"
       - name: Send telegram message
-        uses: UniscoreDev/macos-telegram-action@main
-        with:
-          type: topic
-          message: "🎬 - Bắt đầu build: ${{ steps.get-message-information.outputs.value }}\n- Thanh niên ấn build 👨‍💻: ${{ env.COMMITTER_NAME || 'Unknown' }}\n"
+        env:
+          MESSAGE: "🎬 <b>Bắt đầu build:</b> ${{ steps.get-message-information.outputs.value }}\n- Thanh niên ấn build 👨‍💻: ${{ env.COMMITTER_NAME || 'Unknown' }}"
+        run: |
+          # Build JSON payload using jq for safety
+          # Note: We use callback_data instead of url for 'one-click' cancellation
+          jq -n --arg chat_id "${TELEGRAM_GROUP_ID}" \
+                --arg thread_id "${TELEGRAM_TOPIC_ID}" \
+                --arg text "$(echo -e "$MESSAGE")" \
+                --arg button_text "❌ Hủy workflow nha bro" \
+                --arg callback_data "cancel_run:${{ github.run_id }}" \
+                '{
+                  chat_id: $chat_id,
+                  message_thread_id: $thread_id,
+                  text: $text,
+                  parse_mode: "HTML",
+                  disable_web_page_preview: true,
+                  reply_markup: {
+                    inline_keyboard: [[
+                      {
+                        text: $button_text,
+                        callback_data: $callback_data
+                      }
+                    ]]
+                  }
+                }' > payload.json
+
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d @payload.json
 
   prepare:
     name: Prepare ${{ matrix.format }}
@@ -453,21 +478,23 @@ jobs:
 
       - name: Send telegram message for iOS
         if: ${{ matrix.platform == 'IOS' && success() }}
-        uses: UniscoreDev/macos-telegram-action@main
-        with:
-          type: topic
-          message: |
-            ✅ - Build thành công ${{ matrix.format }} rồi hàng đã có trên TestFlight:
-            ${{ needs.init.outputs.message-information }}
+        run: |
+          MESSAGE="✅ <b>Build thành công ${{ matrix.format }} rồi hàng đã có trên TestFlight:</b>\n${{ needs.init.outputs.message-information }}"
+          jq -n --arg chat_id "${TELEGRAM_GROUP_ID}" \
+                --arg thread_id "${TELEGRAM_TOPIC_ID}" \
+                --arg text "$(echo -e "$MESSAGE")" \
+                '{chat_id: $chat_id, message_thread_id: $thread_id, text: $text, parse_mode: "HTML", disable_web_page_preview: true}' > payload_ios.json
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" -H "Content-Type: application/json" -d @payload_ios.json
 
       - name: Send telegram message for Android
         if: ${{ matrix.platform == 'ANDROID' && success() }}
-        uses: UniscoreDev/macos-telegram-action@main
-        with:
-          type: topic
-          message: |
-            ✅ - Build thành công ${{ matrix.format }} rồi hàng đã có trên App Distribution:
-            ${{ needs.init.outputs.message-information }}
+        run: |
+          MESSAGE="✅ <b>Build thành công ${{ matrix.format }} rồi hàng đã có trên App Distribution:</b>\n${{ needs.init.outputs.message-information }}"
+          jq -n --arg chat_id "${TELEGRAM_GROUP_ID}" \
+                --arg thread_id "${TELEGRAM_TOPIC_ID}" \
+                --arg text "$(echo -e "$MESSAGE")" \
+                '{chat_id: $chat_id, message_thread_id: $thread_id, text: $text, parse_mode: "HTML", disable_web_page_preview: true}' > payload_android.json
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" -H "Content-Type: application/json" -d @payload_android.json
 
       # Combined "What's New" notification is sent by 'notify' job after all platforms complete
 
@@ -535,12 +562,12 @@ jobs:
           
           {
             echo "TELEGRAM_FAIL_MESSAGE<<EOF"
-            echo "💥 **${FAIL_MOOD}**"
+            echo "💥 <b>${FAIL_MOOD}</b>"
             echo ""
-            echo "❌ **Build thất bại:** ${{ matrix.format }} (${{ matrix.platform }})"
-            echo "📦 **Phiên bản:** ${VERSION_INFO}"
+            echo "❌ <b>Build thất bại:</b> ${{ matrix.format }} (${{ matrix.platform }})"
+            echo "${VERSION_INFO}"
             echo ""
-            echo "🤖 **Phân tích AI:**"
+            echo "🤖 <b>Phân tích AI:</b>"
             echo "${ANALYSIS}"
             echo ""
             echo "🔗 Xem chi tiết: ${RUN_URL}"
@@ -549,10 +576,22 @@ jobs:
 
       - name: Send telegram message failure
         if: ${{ failure() }}
-        uses: UniscoreDev/macos-telegram-action@main
-        with:
-          type: topic
-          message: ${{ env.TELEGRAM_FAIL_MESSAGE }}
+        run: |
+          # Build JSON payload using jq for safety
+          jq -n --arg chat_id "${TELEGRAM_GROUP_ID}" \
+                --arg thread_id "${TELEGRAM_TOPIC_ID}" \
+                --arg text "$(echo -e "${{ env.TELEGRAM_FAIL_MESSAGE }}")" \
+                '{
+                  chat_id: $chat_id,
+                  message_thread_id: $thread_id,
+                  text: $text,
+                  parse_mode: "HTML",
+                  disable_web_page_preview: true
+                }' > payload_fail.json
+
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d @payload_fail.json
 
   notify:
     name: Send Success Notification
@@ -626,25 +665,56 @@ jobs:
           # Construct the full message with proper escaping for multiline
           {
             echo "TELEGRAM_MESSAGE<<EOF"
-            echo "🎉 **${BUILD_MOOD}**"
+            echo "🎉 <b>${BUILD_MOOD}</b>"
             echo ""
-            echo "✅ **ĐÃ SẴN SÀNG TRÊN CẢ iOS VÀ ANDROID!**"
+            echo "✅ <b>ĐÃ SẴN SÀNG TRÊN CẢ iOS VÀ ANDROID!</b>"
             echo ""
-            echo "📱 **iOS:** TestFlight"
-            echo "🤖 **Android:** App Distribution"
+            echo "📱 <b>iOS:</b> TestFlight"
+            echo "🤖 <b>Android:</b> App Distribution"
             echo ""
             echo "${VERSION_INFO}"
-            echo "🌍 **Môi trường:** ${ENV_EMOJI}"
-            echo "🕐 **Thời gian:** ${BUILD_TIME}"
+            echo "🌍 <b>Môi trường:</b> ${ENV_EMOJI}"
+            echo "🕐 <b>Thời gian:</b> ${BUILD_TIME}"
             echo ""
-            echo "📝 **Có gì mới:**"
+            echo "📝 <b>Có gì mới:</b>"
             echo "${RELEASE_NOTES}"
             echo "EOF"
           } >> $GITHUB_ENV
 
       - name: Send combined Telegram notification
-        uses: UniscoreDev/macos-telegram-action@main
-        with:
-          type: topic
-          message: ${{ env.TELEGRAM_MESSAGE }}
+        run: |
+          # Build JSON payload using jq for safety
+          jq -n --arg chat_id "${TELEGRAM_GROUP_ID}" \
+                --arg thread_id "${TELEGRAM_TOPIC_ID}" \
+                --arg text "$(echo -e "${{ env.TELEGRAM_MESSAGE }}")" \
+                '{
+                  chat_id: $chat_id,
+                  message_thread_id: $thread_id,
+                  text: $text,
+                  parse_mode: "HTML",
+                  disable_web_page_preview: true
+                }' > payload_success.json
+
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d @payload_success.json
+
+  cleanup:
+    name: Cleanup & Cancel Notification
+    runs-on: ubuntu-latest
+    if: ${{ always() && cancelled() }}
+    steps:
+      - name: Send cancellation message
+        run: |
+          MESSAGE="🚫 <b>Workflow đã bị hủy thành công!</b>"
+          
+          # Build JSON payload using jq for safety
+          jq -n --arg text "$(echo -e "$MESSAGE")" \
+                --arg chat_id "${TELEGRAM_GROUP_ID}" \
+                --arg thread_id "${TELEGRAM_TOPIC_ID}" \
+                '{chat_id: $chat_id, message_thread_id: $thread_id, text: $text, parse_mode: "HTML", disable_web_page_preview: true}' > payload.json
+
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d @payload.json
 
