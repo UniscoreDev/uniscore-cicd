@@ -150,7 +150,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           # 1. Get the failed job logs (limit to last 200 lines)
-          LOGS=$(gh run view ${{ github.run_id }} --log-failed | tail -n 200)
+          LOGS=$(gh run view ${{ github.run_id }} --log-failed -R ${{ github.repository }} | tail -n 200)
           
           # 2. Build Prompt
           PROMPT="Hãy phân tích các log lỗi GitHub Action sau đây và cung cấp một bản tóm tắt ngắn gọn về những gì đã sai và cách khắc phục bằng tiếng Việt. Giữ nội dung dưới 200 từ. Trả về kết quả dưới dạng text thuần túy, không dùng markdown quá phức tạp.\n\nLog:\n$LOGS"
@@ -507,11 +507,11 @@ jobs:
           
           # Method 1: Get failed step logs from current run
           LOGS=""
-          LOGS=$(gh run view ${{ github.run_id }} --log-failed 2>/dev/null | tail -n 150 || echo "")
+          LOGS=$(gh run view ${{ github.run_id }} --log-failed -R ${{ github.repository }} 2>/dev/null | tail -n 150 || echo "")
           
           # Method 2: If empty, try to get recent logs from the run
           if [[ -z "$LOGS" || ${#LOGS} -lt 50 ]]; then
-            LOGS=$(gh run view ${{ github.run_id }} --log 2>/dev/null | grep -i -A 5 -B 2 "error\|failed\|exception\|fatal" | tail -n 150 || echo "")
+            LOGS=$(gh run view ${{ github.run_id }} --log -R ${{ github.repository }} 2>/dev/null | grep -i -A 5 -B 2 "error\|failed\|exception\|fatal" | tail -n 150 || echo "")
           fi
           
           # Method 3: Fallback - provide context about the failing job
@@ -646,7 +646,7 @@ jobs:
           BUILD_MOOD="${BUILD_MOOD:0:60}"
 
           # 4. Determine Platform Status
-          JOBS_JSON=$(gh run view ${{ github.run_id }} --json jobs)
+          JOBS_JSON=$(gh run view ${{ github.run_id }} --json jobs -R ${{ github.repository }})
           
           IOS_SUCCESS=false
           if echo "$JOBS_JSON" | jq -e '.jobs[] | select(.name | contains("Deployment IPA")) | select(.conclusion == "success")' > /dev/null; then
