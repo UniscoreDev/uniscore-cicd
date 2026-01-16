@@ -646,20 +646,26 @@ jobs:
           BUILD_MOOD="${BUILD_MOOD:0:60}"
 
           # 4. Determine Platform Status
-          # We check the status of the 'deploy' jobs using GitHub CLI
           JOBS_JSON=$(gh run view ${{ github.run_id }} --json jobs)
           
-          IOS_STATUS="❌ Thất bại"
-          ANDROID_STATUS="❌ Thất bại"
-          
-          # Check if any job with 'Deployment IPA' succeeded
+          IOS_SUCCESS=false
           if echo "$JOBS_JSON" | jq -e '.jobs[] | select(.name | contains("Deployment IPA")) | select(.conclusion == "success")' > /dev/null; then
-            IOS_STATUS="✅ Sẵn sàng"
+            IOS_SUCCESS=true
           fi
           
-          # Check if any job with 'Deployment APK' or 'Deployment AAB' succeeded
+          ANDROID_SUCCESS=false
           if echo "$JOBS_JSON" | jq -e '.jobs[] | select(.name | contains("Deployment APK") or contains("Deployment AAB")) | select(.conclusion == "success")' > /dev/null; then
-            ANDROID_STATUS="✅ Sẵn sàng"
+            ANDROID_SUCCESS=true
+          fi
+
+          if [ "$IOS_SUCCESS" = true ] && [ "$ANDROID_SUCCESS" = true ]; then
+            PLATFORM_MSG="✅ <b>Cả 2 nền tảng đã sẵn sàng</b>"
+          else
+            IOS_STATUS="❌ Thất bại"
+            [ "$IOS_SUCCESS" = true ] && IOS_STATUS="✅ Sẵn sàng"
+            ANDROID_STATUS="❌ Thất bại"
+            [ "$ANDROID_SUCCESS" = true ] && ANDROID_STATUS="✅ Sẵn sàng"
+            PLATFORM_MSG="📱 <b>iOS:</b> ${IOS_STATUS}\n🤖 <b>Android:</b> ${ANDROID_STATUS}"
           fi
 
           # 5. Build complete message
@@ -680,8 +686,7 @@ jobs:
             echo "TELEGRAM_MESSAGE<<EOF"
             echo "🎉 <b>${BUILD_MOOD}</b>"
             echo ""
-            echo "📱 <b>iOS:</b> ${IOS_STATUS}"
-            echo "🤖 <b>Android:</b> ${ANDROID_STATUS}"
+            echo -e "${PLATFORM_MSG}"
             echo ""
             echo "${VERSION_INFO}"
             echo "🌍 <b>Môi trường:</b> ${ENV_EMOJI}"
