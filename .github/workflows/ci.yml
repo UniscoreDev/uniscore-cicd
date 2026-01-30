@@ -11,6 +11,10 @@ on:
         description: "The committer name to use"
         required: true
         default: "Uniscore Dev"
+      docs_url:
+        description: "The documentation URL to include in the notification"
+        required: false
+        default: ""
   push:
     tags:
       - v*
@@ -694,6 +698,10 @@ jobs:
             echo "${VERSION_INFO}"
             echo "🌍 <b>Môi trường:</b> ${ENV_EMOJI}"
             echo "🕐 <b>Thời gian:</b> ${BUILD_TIME}"
+            # Thêm dòng này để hiện link Docs vào bản tin tổng kết
+            if [[ -n "${{ github.event.inputs.docs_url }}" ]]; then
+              echo "📚 <b>Tài liệu:</b> ${{ github.event.inputs.docs_url }}"
+            fi
             echo ""
             echo "📝 <b>Có gì mới:</b>"
             echo "${RELEASE_NOTES}"
