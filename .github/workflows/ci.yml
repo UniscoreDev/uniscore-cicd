@@ -700,7 +700,7 @@ jobs:
             echo "🕐 <b>Thời gian:</b> ${BUILD_TIME}"
             # Thêm dòng này để hiện link Docs vào bản tin tổng kết
             if [[ -n "${{ github.event.inputs.docs_url }}" ]]; then
-              echo "📚 <b>Tài liệu:</b> ${{ github.event.inputs.docs_url }}"
+              echo "📚 <b>Tài liệu:</b> <a href=\"${{ github.event.inputs.docs_url }}\">Link tài liệu</a>"
             fi
             echo ""
             echo "📝 <b>Có gì mới:</b>"
