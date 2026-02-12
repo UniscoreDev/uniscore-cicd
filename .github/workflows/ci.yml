@@ -611,6 +611,10 @@ jobs:
           cd uniscore-mobile
           git checkout $REF_NAME
 
+      - name: Setup Escape Function
+        run: |
+          echo "escape_html() { echo \"\$1\" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/\"/\&quot;/g'; }" >> $GITHUB_ENV
+
       - name: Generate Release Notes & Build Message
         id: generate-message
         env:
@@ -641,7 +645,8 @@ jobs:
           fi
           
           RELEASE_NOTES=$(echo "$RELEASE_NOTES" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-          RELEASE_NOTES=$(echo "$RELEASE_NOTES" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
+          # Escape HTML
+          RELEASE_NOTES=$(echo "$RELEASE_NOTES" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/\"/\&quot;/g')
           RELEASE_NOTES="${RELEASE_NOTES:0:1500}"
 
           # 3. AI Build Mood
@@ -651,7 +656,7 @@ jobs:
           BUILD_MOOD=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=$GEMINI_API_KEY" \
             -H "Content-Type: application/json" \
             -d @payload_mood.json | jq -r '.candidates[0].content.parts[0].text // "Bản build ẩn danh 🎭"')
-          BUILD_MOOD=$(echo "$BUILD_MOOD" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
+          BUILD_MOOD=$(echo "$BUILD_MOOD" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/\"/\&quot;/g')
           BUILD_MOOD="${BUILD_MOOD:0:60}"
 
           # 4. Determine Platform Status
@@ -679,6 +684,9 @@ jobs:
 
           # 5. Build complete message
           VERSION_INFO="${{ needs.init.outputs.message-information }}"
+          # Escape VERSION_INFO as well to be safe
+          VERSION_INFO_ESCAPED=$(echo "$VERSION_INFO" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/\"/\&quot;/g')
+          
           ENV="${{ needs.init.outputs.env }}"
           
           case "$ENV" in
@@ -697,12 +705,12 @@ jobs:
             echo ""
             echo -e "${PLATFORM_MSG}"
             echo ""
-            echo "${VERSION_INFO}"
+            echo -e "${VERSION_INFO_ESCAPED}"
             echo "🌍 <b>Môi trường:</b> ${ENV_EMOJI}"
             echo "🕐 <b>Thời gian:</b> ${BUILD_TIME}"
             # Thêm dòng này để hiện link Docs vào bản tin tổng kết
             if [[ -n "${{ github.event.inputs.docs_url }}" ]]; then
-              DOCS_URL_ENCODED=$(echo "${{ github.event.inputs.docs_url }}" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
+              DOCS_URL_ENCODED=$(echo "${{ github.event.inputs.docs_url }}" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/\"/\&quot;/g')
               echo "📚 <b>Tài liệu:</b> <a href=\"${DOCS_URL_ENCODED}\">Link tài liệu</a>"
             fi
             echo ""
@@ -713,10 +721,10 @@ jobs:
 
       - name: Send combined Telegram notification
         run: |
-          # Build JSON payload using jq for safety
+          # Use environment variable directly to avoid quoting issues with echo -e
           jq -n --arg chat_id "${TELEGRAM_GROUP_ID}" \
                 --arg thread_id "${TELEGRAM_TOPIC_ID}" \
-                --arg text "$(echo -e "${{ env.TELEGRAM_MESSAGE }}")" \
+                --arg text "${TELEGRAM_MESSAGE}" \
                 '{
                   chat_id: $chat_id,
                   message_thread_id: $thread_id,
