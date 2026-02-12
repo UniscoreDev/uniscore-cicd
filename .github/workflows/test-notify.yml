@@ -1,0 +1,129 @@
+name: Test Telegram Notification
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref_name:
+        description: "The ref name to use for commits"
+        required: true
+        default: "main"
+      docs_url:
+        description: "The documentation URL to test"
+        required: false
+        default: "https://unity1185445.gitlab.io/uniscore-mobile/?v=1&t=2"
+      test_env:
+        description: "Environment to simulate (dev, stag, beta, prod)"
+        required: true
+        default: "dev"
+
+env:
+  LC_ALL: en_US.UTF-8
+  LANG: en_US.UTF-8
+  REF_NAME: ${{ github.event.inputs.ref_name }}
+  GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TELEGRAM_GROUP_ID: ${{ vars.TELEGRAM_GROUP_ID }}
+  TELEGRAM_TOPIC_ID: ${{ vars.TELEGRAM_TOPIC_ID }}
+  GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+jobs:
+  test-notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone GitLab repository
+        run: |
+          git clone https://oauth2:$GITLAB_TOKEN@gitlab.com/unity1185445/uniscore-mobile.git
+          cd uniscore-mobile
+          git checkout $REF_NAME
+
+      - name: Generate Release Notes & Build Message
+        id: generate-message
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: uniscore-mobile
+        run: |
+          # 1. Get Commits (last 10 commits)
+          COMMITS=$(git log -n 10 --pretty=format:"- %s")
+          
+          # 2. AI Generate Release Notes
+          PROMPT="Dựa trên danh sách commit sau, hãy viết một bản tóm tắt 'Có gì mới' ngắn gọn, vui vẻ bằng tiếng Việt. Yêu cầu: bắt đầu mỗi dòng bằng dấu gạch đầu dòng (-), tối đa 10 dòng, mỗi dòng tối đa 100 ký tự. Không dùng markdown phức tạp, không đánh số.\n\nCommits:\n$COMMITS"
+          jq -n --arg prompt "$PROMPT" '{contents: [{parts: [{text: $prompt}]}]}' > payload_notes.json
+
+          RELEASE_NOTES=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=$GEMINI_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d @payload_notes.json | jq -r '.candidates[0].content.parts[0].text // empty')
+
+          if [[ -z "$RELEASE_NOTES" || "$RELEASE_NOTES" == "null" ]]; then
+            RELEASE_NOTES="- [Test] Cập nhật hệ thống và sửa lỗi."
+          fi
+          
+          RELEASE_NOTES=$(echo "$RELEASE_NOTES" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+          # Escape HTML
+          RELEASE_NOTES=$(echo "$RELEASE_NOTES" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/\"/\&quot;/g')
+          RELEASE_NOTES="${RELEASE_NOTES:0:1500}"
+
+          # 3. AI Build Mood
+          MOOD_PROMPT="Dựa trên các commit sau, hãy đặt một cái tên 'hài hước, lầy lội' bằng tiếng Việt cho bản build này kèm theo emoji (ví dụ: 'Bản build chạy bằng niềm tin 🤡'). Chỉ trả về cái tên, tối đa 50 ký tự.\n\nCommits:\n$COMMITS"
+          jq -n --arg prompt "$MOOD_PROMPT" '{contents: [{parts: [{text: $prompt}]}]}' > payload_mood.json
+          
+          BUILD_MOOD=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=$GEMINI_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d @payload_mood.json | jq -r '.candidates[0].content.parts[0].text // "Bản build ẩn danh 🎭"')
+          BUILD_MOOD=$(echo "$BUILD_MOOD" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/\"/\&quot;/g')
+          BUILD_MOOD="${BUILD_MOOD:0:60}"
+
+          # 4. Mock Platform Status for testing
+          PLATFORM_MSG="✅ <b>Cả 2 nền tảng đã sẵn sàng (Test)</b>"
+
+          # 5. Build complete message
+          VERSION_INFO="[Test Mode]\n- App: Uniscore (Test)\n- Môi trường: ${{ github.event.inputs.test_env }}\n- Phiên bản: 1.0.0 (Test)"
+          # Escape VERSION_INFO
+          VERSION_INFO_ESCAPED=$(echo "$VERSION_INFO" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/\"/\&quot;/g')
+          
+          ENV="${{ github.event.inputs.test_env }}"
+          
+          case "$ENV" in
+            dev) ENV_EMOJI="🛠️ Development" ;;
+            stag) ENV_EMOJI="🧪 Staging" ;;
+            beta) ENV_EMOJI="🎯 Beta" ;;
+            prod) ENV_EMOJI="🚀 Production" ;;
+            *) ENV_EMOJI="📦 $ENV" ;;
+          esac
+          
+          BUILD_TIME=$(TZ='Asia/Ho_Chi_Minh' date '+%d/%m/%Y %H:%M')
+          
+          {
+            echo "TELEGRAM_MESSAGE<<EOF"
+            echo "🎉 <b>${BUILD_MOOD}</b> (TEST)"
+            echo ""
+            echo -e "${PLATFORM_MSG}"
+            echo ""
+            echo -e "${VERSION_INFO_ESCAPED}"
+            echo "🌍 <b>Môi trường:</b> ${ENV_EMOJI}"
+            echo "🕐 <b>Thời gian:</b> ${BUILD_TIME}"
+            if [[ -n "${{ github.event.inputs.docs_url }}" ]]; then
+              DOCS_URL_ENCODED=$(echo "${{ github.event.inputs.docs_url }}" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/\"/\&quot;/g')
+              echo "📚 <b>Tài liệu:</b> <a href=\"${DOCS_URL_ENCODED}\">Link tài liệu</a>"
+            fi
+            echo ""
+            echo "📝 <b>Có gì mới:</b>"
+            echo "${RELEASE_NOTES}"
+            echo "EOF"
+          } >> $GITHUB_ENV
+
+      - name: Send combined Telegram notification
+        run: |
+          jq -n --arg chat_id "${TELEGRAM_GROUP_ID}" \
+                --arg thread_id "${TELEGRAM_TOPIC_ID}" \
+                --arg text "${TELEGRAM_MESSAGE}" \
+                '{
+                  chat_id: $chat_id,
+                  message_thread_id: $thread_id,
+                  text: $text,
+                  parse_mode: "HTML",
+                  disable_web_page_preview: true
+                }' > payload_success.json
+
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d @payload_success.json

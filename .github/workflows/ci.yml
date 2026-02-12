@@ -611,10 +611,6 @@ jobs:
           cd uniscore-mobile
           git checkout $REF_NAME
 
-      - name: Setup Escape Function
-        run: |
-          echo "escape_html() { echo \"\$1\" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/\"/\&quot;/g'; }" >> $GITHUB_ENV
-
       - name: Generate Release Notes & Build Message
         id: generate-message
         env:
