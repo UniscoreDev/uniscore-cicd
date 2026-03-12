@@ -90,6 +90,41 @@ jobs:
           GCLOUD_SERVICE_KEY: ${{ secrets.GCLOUD_SERVICE_KEY }}
           GCLOUD_PROJECT_ID: ${{ secrets.GCLOUD_PROJECT_ID }}
 
+      - name: Send Telegram notification
+        if: always()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          SUMMARY_FILE="uniscore-mobile/build/testlab-android-summary.txt"
+          if [ -f "$SUMMARY_FILE" ]; then
+            source "$SUMMARY_FILE"
+          else
+            STATUS="FAIL"
+            PLATFORM="Android"
+            TEST_TYPE="Robo"
+            RESULT_URL=""
+            FAILURE_REASON="Script failed before Test Lab execution"
+          fi
+
+          if [ "$STATUS" = "PASS" ]; then
+            QUOTE="Ngon lành cành đào 🍑"
+            MESSAGE="✅ *Test Lab — Android Robo*%0A%0A${QUOTE}%0A%0AStatus: PASSED%0ACommit: \`${{ inputs.source_repo_ref }}\`%0ABranch: ${{ inputs.branch }}%0ATriggered by: ${{ inputs.committer_name }}%0A%0A[Xem kết quả]($RESULT_URL)"
+          else
+            QUOTE="Có bug rồi, ai fix đây 🫠"
+            REASON=$(echo "$FAILURE_REASON" | head -3 | tr '\n' ' ')
+            MESSAGE="❌ *Test Lab — Android Robo*%0A%0A${QUOTE}%0A%0AStatus: FAILED (exit $EXIT_CODE)%0ACommit: \`${{ inputs.source_repo_ref }}\`%0ABranch: ${{ inputs.branch }}%0ATriggered by: ${{ inputs.committer_name }}%0A%0ALý do: $REASON%0A%0A[Xem kết quả]($RESULT_URL)"
+          fi
+
+          if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
+            curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+              -d chat_id="$TELEGRAM_CHAT_ID" \
+              -d parse_mode="Markdown" \
+              -d text="$MESSAGE" || echo "⚠️ Telegram notification failed"
+          else
+            echo "⚠️ Telegram secrets not configured, skipping notification"
+          fi
+
       - name: Upload logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
