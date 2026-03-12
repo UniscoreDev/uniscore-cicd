@@ -1,0 +1,95 @@
+name: Test Lab — Android Robo
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_repo_ref:
+        description: 'Commit SHA from uniscore-mobile'
+        required: true
+      committer_name:
+        required: false
+        default: 'CI'
+      branch:
+        required: false
+        default: 'test-lab'
+
+env:
+  LC_ALL: en_US.UTF-8
+  LANG: en_US.UTF-8
+  GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+
+jobs:
+  testlab-android:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      # --- Free disk (same as ci.yml) ---
+      - name: Free Disk Space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: false
+          android: false
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      # --- Clone ---
+      - name: Clone uniscore-mobile
+        run: |
+          git clone https://oauth2:$GITLAB_TOKEN@gitlab.com/unity1185445/uniscore-mobile.git
+          cd uniscore-mobile
+          git checkout ${{ inputs.source_repo_ref }}
+
+      # --- Android build env (same as ci.yml deploy job) ---
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26c
+
+      # --- Node + JS deps (same as ci.yml) ---
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.21.1'
+
+      - name: Cache node_modules
+        id: cache-node-modules
+        uses: actions/cache@v4
+        with:
+          path: uniscore-mobile/node_modules
+          key: ANDROID-cache-node-modules-${{ hashFiles('uniscore-mobile/package.json') }}
+
+      - name: Install JS dependencies
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        working-directory: uniscore-mobile
+        run: yarn install --network-concurrency 1
+
+      # --- gcloud + Test Lab ---
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build AAB & Run Firebase Test Lab
+        working-directory: uniscore-mobile
+        run: ./scripts/run-testlab-android.sh
+        env:
+          GCLOUD_SERVICE_KEY: ${{ secrets.GCLOUD_SERVICE_KEY }}
+          GCLOUD_PROJECT_ID: ${{ secrets.GCLOUD_PROJECT_ID }}
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testlab-android-logs
+          path: uniscore-mobile/build/testlab-android.log
+          retention-days: 3
