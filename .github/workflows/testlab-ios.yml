@@ -18,6 +18,10 @@ env:
   LANG: en_US.UTF-8
   GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
   P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TELEGRAM_GROUP_ID: ${{ vars.TELEGRAM_GROUP_ID }}
+  TELEGRAM_TOPIC_ID: ${{ vars.TELEGRAM_TOPIC_ID }}
+  GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
 permissions:
   contents: read
@@ -102,45 +106,116 @@ jobs:
         run: ./scripts/run-testlab-ios.sh uniscoreStag ReleaseStag
         env:
           GCLOUD_SERVICE_KEY: ${{ secrets.GCLOUD_SERVICE_KEY }}
-          GCLOUD_PROJECT_ID: ${{ secrets.GCLOUD_PROJECT_ID }}
+          GCLOUD_PROJECT_ID: ${{ vars.GCLOUD_PROJECT_ID }}
 
-      - name: Send Telegram notification
-        if: always()
+      - name: Analyze Failure with AI
+        if: ${{ failure() }}
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # 1. Get the failed job logs (limit to last 150 lines)
+          LOGS=$(gh run view ${{ github.run_id }} --log-failed -R ${{ github.repository }} 2>/dev/null | tail -n 150 || echo "")
+          if [[ -z "$LOGS" || ${#LOGS} -lt 50 ]]; then
+            LOGS="Test Lab iOS build failed. Run ID: ${{ github.run_id }}."
+          fi
+
+          # 2. Build Prompt
+          PROMPT="Bạn là AI chuyên phân tích lỗi CI/CD. Phân tích log lỗi sau và trả lời bằng tiếng Việt:\n\n1. **Lỗi gì?** (1 dòng ngắn gọn)\n2. **Nguyên nhân:** (1-2 dòng)\n3. **Cách sửa:** (1-2 dòng cụ thể)\n\nGiữ tổng cộng dưới 150 từ. Không dùng markdown phức tạp.\n\nLog:\n$LOGS"
+          jq -n --arg prompt "$PROMPT" '{contents: [{parts: [{text: $prompt}]}]}' > payload_fail.json
+
+          # 3. Send to Gemini for analysis (3-tier fallback)
+          ANALYSIS=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$GEMINI_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d @payload_fail.json | jq -r '.candidates[0].content.parts[0].text // empty')
+
+          if [[ -z "$ANALYSIS" || "$ANALYSIS" == "null" ]]; then
+            ANALYSIS=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key=$GEMINI_API_KEY" \
+              -H "Content-Type: application/json" \
+              -d @payload_fail.json | jq -r '.candidates[0].content.parts[0].text // empty')
+          fi
+
+          if [[ -z "$ANALYSIS" || "$ANALYSIS" == "null" ]]; then
+            ANALYSIS="⚠️ Không thể phân tích tự động. Vui lòng xem log trực tiếp."
+          fi
+
+          # 4. Save analysis to GITHUB_ENV (available in next steps as shell var)
+          {
+            echo "TESTLAB_AI_ANALYSIS<<EOF"
+            echo "${ANALYSIS:0:500}"
+            echo "EOF"
+          } >> $GITHUB_ENV
+
+      - name: Build Telegram message
+        if: always()
         run: |
           SUMMARY_FILE="uniscore-mobile/build/testlab/testlab-ios-summary.txt"
           if [ -f "$SUMMARY_FILE" ]; then
             source "$SUMMARY_FILE"
           else
             STATUS="FAIL"
-            PLATFORM="iOS"
-            TEST_TYPE="Game Loop"
             RESULT_URL=""
             FAILURE_REASON="Script failed before Test Lab execution (build/signing error)"
           fi
 
+          # Inject /u/0/ so the link opens with the correct Google account (avoids permission denied)
+          RESULT_URL=$(echo "$RESULT_URL" | sed 's|https://console\.firebase\.google\.com/|https://console.firebase.google.com/u/0/|')
+
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
           if [ "$STATUS" = "PASS" ]; then
-            QUOTE="Ngon lành cành đào 🍑"
-            MESSAGE="✅ *Test Lab — iOS Game Loop*%0A%0A${QUOTE}%0A%0AStatus: PASSED%0ACommit: \`${{ inputs.source_repo_ref }}\`%0ABranch: ${{ inputs.branch }}%0ATriggered by: ${{ inputs.committer_name }}%0A%0A[Xem kết quả]($RESULT_URL)"
+            {
+              echo "TELEGRAM_MESSAGE<<EOF"
+              echo "✅ <b>Test Lab — iOS Game Loop</b>"
+              echo ""
+              echo "Ngon lành cành đào 🍑"
+              echo ""
+              echo "Status: PASSED"
+              echo "Commit: <code>${{ inputs.source_repo_ref }}</code>"
+              echo "Branch: ${{ inputs.branch }}"
+              echo "Triggered by: ${{ inputs.committer_name }}"
+              echo ""
+              echo "🔗 <a href=\"${RESULT_URL:-${RUN_URL}}\">Xem kết quả Test Lab</a>"
+              echo "🔗 <a href=\"${RUN_URL}\">Xem GitHub Actions run</a>"
+              echo "EOF"
+            } >> $GITHUB_ENV
           else
-            QUOTE="Có bug rồi, ai fix đây 🫠"
             REASON=$(echo "$FAILURE_REASON" | head -3 | tr '\n' ' ')
-            MESSAGE="❌ *Test Lab — iOS Game Loop*%0A%0A${QUOTE}%0A%0AStatus: FAILED (exit ${EXIT_CODE:-unknown})%0ACommit: \`${{ inputs.source_repo_ref }}\`%0ABranch: ${{ inputs.branch }}%0ATriggered by: ${{ inputs.committer_name }}%0A%0ALý do: ${REASON:-Build hoặc signing bị lỗi}%0A%0A[Xem kết quả](${RESULT_URL:-N/A})"
+            {
+              echo "TELEGRAM_MESSAGE<<EOF"
+              echo "❌ <b>Test Lab — iOS Game Loop</b>"
+              echo ""
+              echo "Có bug rồi, ai fix đây 🫠"
+              echo ""
+              echo "Status: FAILED (exit ${EXIT_CODE:-unknown})"
+              echo "Commit: <code>${{ inputs.source_repo_ref }}</code>"
+              echo "Branch: ${{ inputs.branch }}"
+              echo "Triggered by: ${{ inputs.committer_name }}"
+              echo ""
+              echo "Lý do: ${REASON:-Build hoặc signing bị lỗi}"
+              echo ""
+              echo "🤖 <b>Phân tích AI:</b>"
+              echo "${TESTLAB_AI_ANALYSIS:-Không có phân tích nào.}"
+              echo ""
+              echo "🔗 <a href=\"${RESULT_URL:-${RUN_URL}}\">Xem kết quả Test Lab</a>"
+              echo "🔗 <a href=\"${RUN_URL}\">Xem GitHub Actions run</a>"
+              echo "EOF"
+            } >> $GITHUB_ENV
           fi
 
-          if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
-            curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-              -d chat_id="$TELEGRAM_CHAT_ID" \
-              -d parse_mode="Markdown" \
-              -d text="$MESSAGE" || echo "⚠️ Telegram notification failed"
-          else
-            echo "⚠️ Telegram secrets not configured, skipping notification"
-          fi
+      - name: Send Telegram notification
+        if: always()
+        run: |
+          jq -n --arg chat_id "${TELEGRAM_GROUP_ID}" \
+                --arg thread_id "${TELEGRAM_TOPIC_ID}" \
+                --arg text "${TELEGRAM_MESSAGE}" \
+                '{chat_id: $chat_id, message_thread_id: $thread_id, text: $text, parse_mode: "HTML", disable_web_page_preview: true}' > payload_notify.json
+
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d @payload_notify.json
 
       - name: Upload build logs on failure
-        if: failure()
+        if: ${{ failure() }}
         uses: actions/upload-artifact@v4
         with:
           name: testlab-ios-logs
