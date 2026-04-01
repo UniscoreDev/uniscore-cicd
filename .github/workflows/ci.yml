@@ -10,7 +10,7 @@ on:
       committer_name:
         description: "The committer name to use"
         required: true
-        default: "Uniscore Dev"
+        default: "nguyenphp"
       docs_url:
         description: "The documentation URL to include in the notification"
         required: false
@@ -37,6 +37,8 @@ jobs:
       matrix: ${{ steps.set-matrix.outputs.value }}
       message-information: ${{ steps.get-message-information.outputs.value }}
       env: ${{ steps.set-env.outputs.value }}
+      release-notes: ${{ steps.gen-notes.outputs.notes }}
+      build-mood: ${{ steps.gen-notes.outputs.mood }}
     steps:
       - name: Clone GitLab repository
         run: |
@@ -73,6 +75,46 @@ jobs:
           source .github/scripts/utils.sh
           echo "value=$(get_message_information)" >> "$GITHUB_OUTPUT"
         timeout-minutes: 1
+
+      - name: Generate Release Notes & Mood
+        id: gen-notes
+        working-directory: uniscore-mobile
+        run: |
+          # 1. Get Commits
+          COMMITS=$(git log -n 10 --pretty=format:"- %s")
+          
+          # 2. AI Generate Release Notes (3-tier fallback)
+          PROMPT="Dựa trên danh sách commit sau, hãy viết một bản tóm tắt 'Có gì mới' ngắn gọn, vui vẻ bằng tiếng Việt (tối đa 5 bullet points, mỗi dòng tối đa 60 ký tự). Không dùng markdown phức tạp.\n\nCommits:\n$COMMITS"
+          jq -n --arg prompt "$PROMPT" '{contents: [{parts: [{text: $prompt}]}]}' > payload_notes.json
+
+          RELEASE_NOTES=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=$GEMINI_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d @payload_notes.json | jq -r '.candidates[0].content.parts[0].text // empty')
+
+          if [[ -z "$RELEASE_NOTES" || "$RELEASE_NOTES" == "null" ]]; then
+            RELEASE_NOTES=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key=$GEMINI_API_KEY" \
+              -H "Content-Type: application/json" \
+              -d @payload_notes.json | jq -r '.candidates[0].content.parts[0].text // empty')
+          fi
+
+          if [[ -z "$RELEASE_NOTES" || "$RELEASE_NOTES" == "null" ]]; then
+            RELEASE_NOTES=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=$GEMINI_API_KEY" \
+              -H "Content-Type: application/json" \
+              -d @payload_notes.json | jq -r '.candidates[0].content.parts[0].text // "- Cập nhật hệ thống và sửa lỗi."')
+          fi
+          
+          # Clean and escape
+          RELEASE_NOTES=$(echo "$RELEASE_NOTES" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+          echo "notes=$RELEASE_NOTES" >> "$GITHUB_OUTPUT"
+
+          # 3. AI Build Mood
+          MOOD_PROMPT="Dựa trên các commit sau, hãy đặt một cái tên 'hài hước, lầy lội' bằng tiếng Việt cho bản build này kèm theo emoji (ví dụ: 'Bản build chạy bằng niềm tin 🤡'). Chỉ trả về cái tên, không thêm gì khác.\n\nCommits:\n$COMMITS"
+          jq -n --arg prompt "$MOOD_PROMPT" '{contents: [{parts: [{text: $prompt}]}]}' > payload_mood.json
+          
+          BUILD_MOOD=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=$GEMINI_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d @payload_mood.json | jq -r '.candidates[0].content.parts[0].text // "Bản build ẩn danh 🎭"')
+          echo "mood=$BUILD_MOOD" >> "$GITHUB_OUTPUT"
       - name: Log value
         run: |
           echo "tag-source: $REF_NAME"
@@ -340,6 +382,12 @@ jobs:
       #     key: xcode-cache-deriveddata-${{ needs.init.outputs.env }}-${{ hashFiles('uniscore-mobile/package.json') }}
       #     restore-keys: xcode-cache-deriveddata-${{ needs.init.outputs.env }}-
 
+      - name: Prepare Release Notes File
+        working-directory: uniscore-mobile
+        run: |
+          echo "${{ needs.init.outputs.release-notes }}" > release_notes.txt
+          echo "${{ needs.init.outputs.build-mood }}" > build_mood.txt
+
       - name: Change version and build number
         working-directory: uniscore-mobile
         run: bash .github/scripts/change_version_and_build_number.sh
@@ -424,43 +472,18 @@ jobs:
         working-directory: uniscore-mobile
         run: bundle exec fastlane android beta
 
-      - name: Generate Release Notes & Stats
+      - name: Calculate Build Stats
         if: ${{ success() }}
         working-directory: uniscore-mobile
         run: |
-          # 1. Get Commits (last 10 commits or since last tag)
-          COMMITS=$(git log -n 10 --pretty=format:"- %s")
-          
-          # 2. AI Generate Release Notes (3-tier fallback)
-          PROMPT="Dựa trên danh sách commit sau, hãy viết một bản tóm tắt 'Có gì mới' ngắn gọn, vui vẻ bằng tiếng Việt (tối đa 5 bullet points, mỗi dòng tối đa 60 ký tự). Không dùng markdown phức tạp.\n\nCommits:\n$COMMITS"
-          jq -n --arg prompt "$PROMPT" '{contents: [{parts: [{text: $prompt}]}]}' > payload_notes.json
-
-          RELEASE_NOTES=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=$GEMINI_API_KEY" \
-            -H "Content-Type: application/json" \
-            -d @payload_notes.json | jq -r '.candidates[0].content.parts[0].text // empty')
-
-          if [[ -z "$RELEASE_NOTES" || "$RELEASE_NOTES" == "null" ]]; then
-            RELEASE_NOTES=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key=$GEMINI_API_KEY" \
-              -H "Content-Type: application/json" \
-              -d @payload_notes.json | jq -r '.candidates[0].content.parts[0].text // empty')
-          fi
-
-          if [[ -z "$RELEASE_NOTES" || "$RELEASE_NOTES" == "null" ]]; then
-            RELEASE_NOTES=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=$GEMINI_API_KEY" \
-              -H "Content-Type: application/json" \
-              -d @payload_notes.json | jq -r '.candidates[0].content.parts[0].text // "Cập nhật hệ thống và sửa lỗi vặt."')
-          fi
-          # Truncate release notes to avoid Telegram limit (max 600 chars)
-          echo "${RELEASE_NOTES:0:600}" > ../release_notes.txt
-
-          # 3. Calculate Build Stats
+          # 1. Calculate Build Duration
           END_TIME=$(date +%s)
           DURATION=$((END_TIME - JOB_START_TIME))
           MINUTES=$((DURATION / 60))
           SECONDS=$((DURATION % 60))
           echo "${MINUTES}m ${SECONDS}s" > ../build_duration.txt
 
-          # 4. Get File Size
+          # 2. Get File Size
           if [[ "${{ matrix.platform }}" == "ANDROID" ]]; then
             FILE_PATH=$(find android/app/build/outputs -name "*.apk" -o -name "*.aab" | head -n 1)
           else
@@ -472,15 +495,6 @@ jobs:
           else
             echo "N/A" > ../build_size.txt
           fi
-
-          # 5. AI Build Mood
-          MOOD_PROMPT="Dựa trên các commit sau, hãy đặt một cái tên 'hài hước, lầy lội' bằng tiếng Việt cho bản build này kèm theo emoji (ví dụ: 'Bản build chạy bằng niềm tin 🤡' hoặc 'Siêu nhân sửa bug 🦸‍♂️'). Chỉ trả về cái tên, không thêm gì khác.\n\nCommits:\n$COMMITS"
-          jq -n --arg prompt "$MOOD_PROMPT" '{contents: [{parts: [{text: $prompt}]}]}' > payload_mood.json
-          
-          BUILD_MOOD=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=$GEMINI_API_KEY" \
-            -H "Content-Type: application/json" \
-            -d @payload_mood.json | jq -r '.candidates[0].content.parts[0].text // "Bản build ẩn danh 🎭"')
-          echo "$BUILD_MOOD" > ../build_mood.txt
 
       - name: Send telegram message for iOS
         if: ${{ matrix.platform == 'IOS' && success() }}
@@ -611,47 +625,20 @@ jobs:
           cd uniscore-mobile
           git checkout $REF_NAME
 
-      - name: Generate Release Notes & Build Message
+      - name: Prepare Release Notes & Build Message
         id: generate-message
         env:
           GH_TOKEN: ${{ github.token }}
-        working-directory: uniscore-mobile
         run: |
-          # 1. Get Commits (last 10 commits)
-          COMMITS=$(git log -n 10 --pretty=format:"- %s")
+          # Use reusable notes from init job
+          RELEASE_NOTES="${{ needs.init.outputs.release-notes }}"
           
-          # 2. AI Generate Release Notes
-          PROMPT="Dựa trên danh sách commit sau, hãy viết một bản tóm tắt 'Có gì mới' ngắn gọn, vui vẻ bằng tiếng Việt. Yêu cầu: bắt đầu mỗi dòng bằng dấu gạch đầu dòng (-), tối đa 10 dòng, mỗi dòng tối đa 100 ký tự. Không dùng markdown phức tạp, không đánh số.\n\nCommits:\n$COMMITS"
-          jq -n --arg prompt "$PROMPT" '{contents: [{parts: [{text: $prompt}]}]}' > payload_notes.json
-
-          RELEASE_NOTES=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=$GEMINI_API_KEY" \
-            -H "Content-Type: application/json" \
-            -d @payload_notes.json | jq -r '.candidates[0].content.parts[0].text // empty')
-
-          if [[ -z "$RELEASE_NOTES" || "$RELEASE_NOTES" == "null" ]]; then
-            RELEASE_NOTES=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key=$GEMINI_API_KEY" \
-              -H "Content-Type: application/json" \
-              -d @payload_notes.json | jq -r '.candidates[0].content.parts[0].text // empty')
-          fi
-
-          if [[ -z "$RELEASE_NOTES" || "$RELEASE_NOTES" == "null" ]]; then
-            RELEASE_NOTES=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=$GEMINI_API_KEY" \
-              -H "Content-Type: application/json" \
-              -d @payload_notes.json | jq -r '.candidates[0].content.parts[0].text // "- Cập nhật hệ thống và sửa lỗi."')
-          fi
-          
-          RELEASE_NOTES=$(echo "$RELEASE_NOTES" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
           # Escape HTML
           RELEASE_NOTES=$(echo "$RELEASE_NOTES" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/\"/\&quot;/g')
           RELEASE_NOTES="${RELEASE_NOTES:0:1500}"
 
-          # 3. AI Build Mood
-          MOOD_PROMPT="Dựa trên các commit sau, hãy đặt một cái tên 'hài hước, lầy lội' bằng tiếng Việt cho bản build này kèm theo emoji (ví dụ: 'Bản build chạy bằng niềm tin 🤡'). Chỉ trả về cái tên, tối đa 50 ký tự.\n\nCommits:\n$COMMITS"
-          jq -n --arg prompt "$MOOD_PROMPT" '{contents: [{parts: [{text: $prompt}]}]}' > payload_mood.json
-          
-          BUILD_MOOD=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=$GEMINI_API_KEY" \
-            -H "Content-Type: application/json" \
-            -d @payload_mood.json | jq -r '.candidates[0].content.parts[0].text // "Bản build ẩn danh 🎭"')
+          # Use reusable mood from init job
+          BUILD_MOOD="${{ needs.init.outputs.build-mood }}"
           BUILD_MOOD=$(echo "$BUILD_MOOD" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/\"/\&quot;/g')
           BUILD_MOOD="${BUILD_MOOD:0:60}"
 
