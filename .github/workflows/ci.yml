@@ -105,7 +105,11 @@ jobs:
           
           # Clean and escape
           RELEASE_NOTES=$(echo "$RELEASE_NOTES" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-          echo "notes=$RELEASE_NOTES" >> "$GITHUB_OUTPUT"
+          {
+            echo "notes<<EOF"
+            echo "$RELEASE_NOTES"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
           # 3. AI Build Mood
           MOOD_PROMPT="Dựa trên các commit sau, hãy đặt một cái tên 'hài hước, lầy lội' bằng tiếng Việt cho bản build này kèm theo emoji (ví dụ: 'Bản build chạy bằng niềm tin 🤡'). Chỉ trả về cái tên, không thêm gì khác.\n\nCommits:\n$COMMITS"
@@ -114,7 +118,11 @@ jobs:
           BUILD_MOOD=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=$GEMINI_API_KEY" \
             -H "Content-Type: application/json" \
             -d @payload_mood.json | jq -r '.candidates[0].content.parts[0].text // "Bản build ẩn danh 🎭"')
-          echo "mood=$BUILD_MOOD" >> "$GITHUB_OUTPUT"
+          {
+            echo "mood<<EOF"
+            echo "$BUILD_MOOD"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
       - name: Log value
         run: |
           echo "tag-source: $REF_NAME"
