@@ -40,6 +40,7 @@ jobs:
         id: generate-message
         env:
           GH_TOKEN: ${{ github.token }}
+          TEST_ENV: ${{ github.event.inputs.test_env }}
         working-directory: uniscore-mobile
         run: |
           # 1. Get Commits (last 10 commits)
@@ -76,7 +77,7 @@ jobs:
           PLATFORM_MSG="✅ <b>Cả 2 nền tảng đã sẵn sàng (Test)</b>"
 
           # 5. Build complete message
-          VERSION_INFO="[Test Mode]\n- App: Uniscore (Test)\n- Môi trường: ${{ github.event.inputs.test_env }}\n- Phiên bản: 1.0.0 (Test)"
+          VERSION_INFO="[Test Mode]\n- App: Uniscore (Test)\n- Môi trường: $TEST_ENV\n- Phiên bản: 1.0.0 (Test)"
           # Escape VERSION_INFO
           VERSION_INFO_ESCAPED=$(echo "$VERSION_INFO" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/\"/\&quot;/g')
           

@@ -234,8 +234,10 @@ jobs:
 
       - name: Send telegram message failure
         if: ${{ failure() }}
+        env:
+          INFO: ${{ needs.init.outputs.message-information }}
         run: |
-          MESSAGE="💥 <b>Thất bại rồi bạn hiền ${{ matrix.platform }}:</b> ${{ needs.init.outputs.message-information }}\n\n🤖 <b>Phân tích AI:</b>\n$(cat ai_analysis_prepare.txt 2>/dev/null || echo "Không có phân tích nào.")"
+          MESSAGE="💥 <b>Thất bại rồi bạn hiền ${{ matrix.platform }}:</b> $INFO\n\n🤖 <b>Phân tích AI:</b>\n$(cat ai_analysis_prepare.txt 2>/dev/null || echo "Không có phân tích nào.")"
           jq -n --arg chat_id "${TELEGRAM_GROUP_ID}" \
                 --arg thread_id "${TELEGRAM_TOPIC_ID}" \
                 --arg text "$(echo -e "$MESSAGE")" \
@@ -530,6 +532,7 @@ jobs:
         if: ${{ failure() }}
         env:
           GH_TOKEN: ${{ github.token }}
+          RAW_INFO: ${{ needs.init.outputs.message-information }}
         run: |
           # 1. Try multiple methods to get error logs
           echo "🔍 Attempting to capture failure logs..."
@@ -556,25 +559,25 @@ jobs:
           
           # 3. Build JSON payload using jq
           jq -n --arg prompt "$PROMPT" '{contents: [{parts: [{text: $prompt}]}]}' > payload_fail.json
-
+ 
           # 4. Send to Gemini for analysis (3-tier fallback)
           ANALYSIS=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$GEMINI_API_KEY" \
             -H "Content-Type: application/json" \
             -d @payload_fail.json | jq -r '.candidates[0].content.parts[0].text // empty')
-
+ 
           if [[ -z "$ANALYSIS" || "$ANALYSIS" == "null" ]]; then
             ANALYSIS=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key=$GEMINI_API_KEY" \
               -H "Content-Type: application/json" \
               -d @payload_fail.json | jq -r '.candidates[0].content.parts[0].text // empty')
           fi
-
+ 
           if [[ -z "$ANALYSIS" || "$ANALYSIS" == "null" ]]; then
             ANALYSIS="⚠️ Không thể phân tích tự động. Vui lòng xem log trực tiếp."
           fi
           
           # Truncate analysis to fit Telegram limit
           ANALYSIS="${ANALYSIS:0:500}"
-
+ 
           # 5. Generate funny failure mood
           FAIL_MOOD_PROMPT="Đặt một cái tên hài hước, lầy lội bằng tiếng Việt cho một build bị lỗi kèm emoji buồn (ví dụ: 'Bản build ra đi không lời từ biệt 💀' hoặc 'Bug 1 - Dev 0 😭'). Chỉ trả về cái tên, tối đa 40 ký tự."
           jq -n --arg prompt "$FAIL_MOOD_PROMPT" '{contents: [{parts: [{text: $prompt}]}]}' > payload_fail_mood.json
@@ -583,9 +586,9 @@ jobs:
             -H "Content-Type: application/json" \
             -d @payload_fail_mood.json | jq -r '.candidates[0].content.parts[0].text // "Build đã hy sinh 💀"')
           FAIL_MOOD="${FAIL_MOOD:0:50}"
-
+ 
           # 6. Build complete failure message
-          VERSION_INFO="${{ needs.init.outputs.message-information }}"
+          VERSION_INFO="$RAW_INFO"
           RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           
           {
@@ -637,16 +640,19 @@ jobs:
         id: generate-message
         env:
           GH_TOKEN: ${{ github.token }}
+          RAW_RELEASE_NOTES: ${{ needs.init.outputs.release-notes }}
+          RAW_BUILD_MOOD: ${{ needs.init.outputs.build-mood }}
+          RAW_VERSION_INFO: ${{ needs.init.outputs.message-information }}
         run: |
           # Use reusable notes from init job
-          RELEASE_NOTES="${{ needs.init.outputs.release-notes }}"
+          RELEASE_NOTES="$RAW_RELEASE_NOTES"
           
           # Escape HTML
           RELEASE_NOTES=$(echo "$RELEASE_NOTES" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/\"/\&quot;/g')
           RELEASE_NOTES="${RELEASE_NOTES:0:1500}"
 
           # Use reusable mood from init job
-          BUILD_MOOD="${{ needs.init.outputs.build-mood }}"
+          BUILD_MOOD="$RAW_BUILD_MOOD"
           BUILD_MOOD=$(echo "$BUILD_MOOD" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/\"/\&quot;/g')
           BUILD_MOOD="${BUILD_MOOD:0:60}"
 
@@ -674,7 +680,7 @@ jobs:
           fi
 
           # 5. Build complete message
-          VERSION_INFO="${{ needs.init.outputs.message-information }}"
+          VERSION_INFO="$RAW_VERSION_INFO"
           # Escape VERSION_INFO as well to be safe
           VERSION_INFO_ESCAPED=$(echo "$VERSION_INFO" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/\"/\&quot;/g')
           
