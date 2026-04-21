@@ -125,7 +125,7 @@ jobs:
           }
 
           # 2. AI Generate Release Notes
-          PROMPT="Bạn là một AI chuyên nghiệp. Dựa trên danh sách commit sau, hãy viết một bản tóm tắt 'Tính năng mới & Cập nhật' chuyên nghiệp, trang trọng bằng tiếng Việt. Yêu cầu: bắt đầu mỗi dòng bằng dấu gạch đầu dòng (-), tập trung vào giá trị và các thay đổi chính, tối đa 10 dòng. Nếu liên quan đến $TASK_CONTEXT, hãy ghi chú rõ. Không dùng markdown phức tạp.\n\nCommits:\n$COMMITS"
+          PROMPT="Bạn là một AI chuyên nghiệp. Hãy viết một bản tóm tắt 'Tính năng mới & Cập nhật' cho phiên bản $REF_NAME, chuyên nghiệp, trang trọng bằng tiếng Việt. Yêu cầu: bắt đầu mỗi dòng bằng dấu gạch đầu dòng (-), nếu thay đổi liên quan đến một task cụ thể thì bắt đầu bằng mã task (ví dụ: - US-1663: Khắc phục lỗi...), tập trung vào giá trị và các thay đổi chính cho người dùng, tối đa 10 dòng. Nếu liên quan đến $TASK_CONTEXT, hãy ghi chú rõ. Không đề cập đến commit hay mã nguồn. Giữ nguyên tên môi trường bằng tiếng Anh (Production, Staging, Development), không dịch sang tiếng Việt. Không dùng markdown phức tạp.\n\nDanh sách thay đổi:\n$COMMITS"
           jq -n --arg prompt "$PROMPT" '{contents: [{parts: [{text: $prompt}]}]}' > payload_notes.json
 
           RELEASE_NOTES=$(call_gemini "gemini-flash-latest" "payload_notes.json") || \
