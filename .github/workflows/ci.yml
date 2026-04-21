@@ -83,8 +83,20 @@ jobs:
           # 1. Get Commits
           COMMITS=$(git log -n 10 --pretty=format:"- %s")
           
+          # Extract all unique Task IDs (e.g., US-1305) from branch and commits
+          BRANCH_TASKS=$(echo "$REF_NAME" | grep -oE "[A-Z]+-[0-9]+" || echo "")
+          COMMIT_TASKS=$(echo "$COMMITS" | grep -oE "[A-Z]+-[0-9]+" || echo "")
+          UNIQUE_TASKS=$(echo -e "${BRANCH_TASKS}\n${COMMIT_TASKS}" | grep -v '^$' | sort -u || echo "")
+          TASK_COUNT=$(echo "$UNIQUE_TASKS" | wc -l | xargs)
+          
+          TASK_CONTEXT="nhiều tính năng"
+          if [[ "$TASK_COUNT" -eq 1 ]]; then
+            TASK_CONTEXT="Task $UNIQUE_TASKS"
+            TASK_PREFIX="[$UNIQUE_TASKS] "
+          fi
+
           # 2. AI Generate Release Notes (3-tier fallback)
-          PROMPT="Dựa trên danh sách commit sau, hãy viết một bản tóm tắt 'Có gì mới' ngắn gọn, vui vẻ bằng tiếng Việt (tối đa 5 bullet points, mỗi dòng tối đa 60 ký tự). Không dùng markdown phức tạp.\n\nCommits:\n$COMMITS"
+          PROMPT="Bạn là một AI chuyên nghiệp. Dựa trên danh sách commit sau, hãy viết một bản tóm tắt 'Tính năng mới & Cập nhật' chuyên nghiệp, trang trọng bằng tiếng Việt. Yêu cầu: bắt đầu mỗi dòng bằng dấu gạch đầu dòng (-), tập trung vào giá trị và các thay đổi chính, tối đa 10 dòng. Nếu liên quan đến $TASK_CONTEXT, hãy ghi chú rõ. Không dùng markdown phức tạp.\n\nCommits:\n$COMMITS"
           jq -n --arg prompt "$PROMPT" '{contents: [{parts: [{text: $prompt}]}]}' > payload_notes.json
 
           RELEASE_NOTES=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=$GEMINI_API_KEY" \
@@ -100,7 +112,7 @@ jobs:
           if [[ -z "$RELEASE_NOTES" || "$RELEASE_NOTES" == "null" ]]; then
             RELEASE_NOTES=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=$GEMINI_API_KEY" \
               -H "Content-Type: application/json" \
-              -d @payload_notes.json | jq -r '.candidates[0].content.parts[0].text // "- Cập nhật hệ thống và sửa lỗi."')
+              -d @payload_notes.json | jq -r '.candidates[0].content.parts[0].text // "- Cập nhật hệ thống và cải tiến hiệu năng."')
           fi
           
           # Clean and escape
@@ -112,12 +124,12 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
           # 3. AI Build Mood
-          MOOD_PROMPT="Dựa trên các commit sau, hãy đặt một cái tên 'hài hước, lầy lội' bằng tiếng Việt cho bản build này kèm theo emoji (ví dụ: 'Bản build chạy bằng niềm tin 🤡'). Chỉ trả về cái tên, không thêm gì khác.\n\nCommits:\n$COMMITS"
+          MOOD_PROMPT="Dựa trên các commit sau, hãy đặt một cái tên 'chuyên nghiệp, trang trọng' bằng tiếng Việt cho bản build này kèm theo emoji phù hợp (ví dụ: 'Cập nhật Hệ thống 🚀' hoặc 'Cải tiến Hiệu năng 🛠️'). Chỉ trả về cái tên. $([[ -n "$TASK_PREFIX" ]] && echo "Yêu cầu bắt đầu bằng ${TASK_PREFIX}")\n\nCommits:\n$COMMITS"
           jq -n --arg prompt "$MOOD_PROMPT" '{contents: [{parts: [{text: $prompt}]}]}' > payload_mood.json
           
           BUILD_MOOD=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=$GEMINI_API_KEY" \
             -H "Content-Type: application/json" \
-            -d @payload_mood.json | jq -r '.candidates[0].content.parts[0].text // "Bản build ẩn danh 🎭"')
+            -d @payload_mood.json | jq -r '.candidates[0].content.parts[0].text // "Cập nhật Uniscore 📱"')
           {
             echo "mood<<EOF"
             echo "$BUILD_MOOD"
@@ -237,7 +249,11 @@ jobs:
         env:
           INFO: ${{ needs.init.outputs.message-information }}
         run: |
-          MESSAGE="💥 <b>Thất bại rồi bạn hiền ${{ matrix.platform }}:</b> $INFO\n\n🤖 <b>Phân tích AI:</b>\n$(cat ai_analysis_prepare.txt 2>/dev/null || echo "Không có phân tích nào.")"
+          ANALYSIS_RAW=$(cat ai_analysis_prepare.txt 2>/dev/null || echo "Không có phân tích nào.")
+          # Escape HTML
+          ANALYSIS_ESCAPED=$(echo "$ANALYSIS_RAW" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/\"/\&quot;/g')
+          
+          MESSAGE="💥 <b>Thất bại rồi bạn hiền ${{ matrix.platform }}:</b> $INFO\n\n🤖 <b>Phân tích AI:</b>\n$ANALYSIS_ESCAPED"
           jq -n --arg chat_id "${TELEGRAM_GROUP_ID}" \
                 --arg thread_id "${TELEGRAM_TOPIC_ID}" \
                 --arg text "$(echo -e "$MESSAGE")" \
@@ -591,15 +607,20 @@ jobs:
           VERSION_INFO="$RAW_INFO"
           RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           
+          # Escape dynamic parts for HTML
+          FAIL_MOOD_ESCAPED=$(echo "$FAIL_MOOD" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/\"/\&quot;/g')
+          VERSION_INFO_ESCAPED=$(echo "$VERSION_INFO" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/\"/\&quot;/g')
+          ANALYSIS_ESCAPED=$(echo "$ANALYSIS" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/\"/\&quot;/g')
+
           {
             echo "TELEGRAM_FAIL_MESSAGE<<EOF"
-            echo "💥 <b>${FAIL_MOOD}</b>"
+            echo "💥 <b>${FAIL_MOOD_ESCAPED}</b>"
             echo ""
             echo "❌ <b>Build thất bại:</b> ${{ matrix.format }} (${{ matrix.platform }})"
-            echo "${VERSION_INFO}"
+            echo "${VERSION_INFO_ESCAPED}"
             echo ""
             echo "🤖 <b>Phân tích AI:</b>"
-            echo "${ANALYSIS}"
+            echo "${ANALYSIS_ESCAPED}"
             echo ""
             echo "🔗 Xem chi tiết: ${RUN_URL}"
             echo "EOF"
