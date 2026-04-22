@@ -30,6 +30,7 @@ env:
   TELEGRAM_GROUP_ID: ${{ vars.TELEGRAM_GROUP_ID }}
   TELEGRAM_TOPIC_ID: ${{ vars.TELEGRAM_TOPIC_ID }}
   GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+  GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
 jobs:
   init:
     runs-on: macos-26
@@ -90,8 +91,8 @@ jobs:
           BRANCH_TASKS=$(echo "$REF_NAME" | grep -oE "[A-Z]+-[0-9]+" || echo "")
           COMMIT_TASKS=$(echo "$COMMITS" | grep -oE "[A-Z]+-[0-9]+" || echo "")
           # UNIQUE_TASKS will be empty if no tasks found
-          UNIQUE_TASKS=$(echo -e "${BRANCH_TASKS}\n${COMMIT_TASKS}" | grep -v '^$' | sort -u || echo "")
-          TASK_COUNT=$(echo "$UNIQUE_TASKS" | grep -v '^$' | wc -l | xargs || echo "0")
+          UNIQUE_TASKS=$(echo -e "${BRANCH_TASKS}\n${COMMIT_TASKS}" | sed '/^$/d' | sort -u)
+          TASK_COUNT=$(echo "$UNIQUE_TASKS" | sed '/^$/d' | wc -l | xargs)
           
           TASK_CONTEXT="nhiều tính năng"
           TASK_PREFIX=""
@@ -123,6 +124,22 @@ jobs:
             fi
           }
 
+          # Function to call Groq API safely (OpenAI-compatible)
+          call_groq() {
+            local prompt=$1
+            local payload=$(jq -n --arg prompt "$prompt" '{model: "llama-3.3-70b-versatile", messages: [{role: "user", content: $prompt}], temperature: 0.7}')
+            local response=$(curl -s -X POST "https://api.groq.com/openai/v1/chat/completions" \
+              -H "Authorization: Bearer $GROQ_API_KEY" \
+              -H "Content-Type: application/json" \
+              -d "$payload")
+            
+            if echo "$response" | jq -e '.choices[0].message.content' > /dev/null 2>&1; then
+              echo "$response" | jq -r '.choices[0].message.content'
+            else
+              return 1
+            fi
+          }
+
           # 2. AI Generate Release Notes
           PROMPT="Bạn là một AI chuyên nghiệp. Hãy viết bản tóm tắt 'Tính năng mới & Cập nhật' $REF_NAME ngắn gọn, súc tích bằng tiếng Việt. Yêu cầu: bắt đầu mỗi dòng bằng dấu gạch đầu dòng (-), nếu thay đổi liên quan đến task thì BẮT BUỘC bắt đầu bằng mã task (ví dụ: - US-1663: Sửa lỗi Dynamic Island...). Nội dung tập trung vào thay đổi chính, tránh viết dài dòng. Tối đa 10 dòng, mỗi dòng không quá 100 ký tự. Không đề cập mã nguồn hay commit. Giữ nguyên tên môi trường tiếng Anh (Production, Staging, Development). Không dùng markdown phức tạp.\n\nDanh sách thay đổi:\n$COMMITS"
           jq -n --arg prompt "$PROMPT" '{contents: [{parts: [{text: $prompt}]}]}' > payload_notes.json
@@ -130,6 +147,7 @@ jobs:
           RELEASE_NOTES=$(call_gemini "gemini-flash-latest" "payload_notes.json") || \
           RELEASE_NOTES=$(call_gemini "gemini-flash-lite-latest" "payload_notes.json") || \
           RELEASE_NOTES=$(call_gemini "gemini-2.0-flash-lite" "payload_notes.json") || \
+          RELEASE_NOTES=$(call_groq "$PROMPT") || \
           RELEASE_NOTES="- Cập nhật hệ thống và cải tiến hiệu năng."
 
           # Clean and escape
@@ -146,6 +164,7 @@ jobs:
           
           BUILD_MOOD=$(call_gemini "gemini-flash-latest" "payload_mood.json") || \
           BUILD_MOOD=$(call_gemini "gemini-1.5-flash" "payload_mood.json") || \
+          BUILD_MOOD=$(call_groq "$MOOD_PROMPT") || \
           BUILD_MOOD="Cập nhật Uniscore 📱"
 
           {
