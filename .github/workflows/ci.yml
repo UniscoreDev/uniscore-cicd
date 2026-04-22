@@ -103,8 +103,7 @@ jobs:
               # Many tasks
               TASKS_JOINED=$(echo "$UNIQUE_TASKS" | tr '\n' ',' | sed 's/,$//')
               TASK_CONTEXT="các task: $TASKS_JOINED"
-              FIRST_TASK=$(echo "$UNIQUE_TASKS" | head -n 1)
-              TASK_PREFIX="[$FIRST_TASK] "
+              TASK_PREFIX="" # General title for multiple tasks
             fi
           fi
 
@@ -125,7 +124,7 @@ jobs:
           }
 
           # 2. AI Generate Release Notes
-          PROMPT="Bạn là một AI chuyên nghiệp. Hãy viết một bản tóm tắt 'Tính năng mới & Cập nhật' cho phiên bản $REF_NAME, chuyên nghiệp, trang trọng bằng tiếng Việt. Yêu cầu: bắt đầu mỗi dòng bằng dấu gạch đầu dòng (-), nếu thay đổi liên quan đến một task cụ thể thì bắt đầu bằng mã task (ví dụ: - US-1663: Khắc phục lỗi...), tập trung vào giá trị và các thay đổi chính cho người dùng, tối đa 10 dòng. Nếu liên quan đến $TASK_CONTEXT, hãy ghi chú rõ. Không đề cập đến commit hay mã nguồn. Giữ nguyên tên môi trường bằng tiếng Anh (Production, Staging, Development), không dịch sang tiếng Việt. Không dùng markdown phức tạp.\n\nDanh sách thay đổi:\n$COMMITS"
+          PROMPT="Bạn là một AI chuyên nghiệp. Hãy viết một bản tóm tắt 'Tính năng mới & Cập nhật' cho phiên bản $REF_NAME, chuyên nghiệp, trang trọng bằng tiếng Việt. Yêu cầu: bắt đầu mỗi dòng bằng dấu gạch đầu dòng (-), nếu thay đổi liên quan đến một task cụ thể thì BẮT BUỘC bắt đầu bằng mã task (ví dụ: - US-1663: Khắc phục lỗi hiển thị...). Tập trung vào giá trị và các thay đổi chính cho người dùng, tối đa 10 dòng. Nếu liên quan đến $TASK_CONTEXT, hãy ghi chú rõ. Không đề cập đến commit hay mã nguồn. Giữ nguyên tên môi trường bằng tiếng Anh (Production, Staging, Development), không dịch sang tiếng Việt. Không dùng markdown phức tạp.\n\nDanh sách thay đổi:\n$COMMITS"
           jq -n --arg prompt "$PROMPT" '{contents: [{parts: [{text: $prompt}]}]}' > payload_notes.json
 
           RELEASE_NOTES=$(call_gemini "gemini-flash-latest" "payload_notes.json") || \
@@ -142,7 +141,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
           # 3. AI Build Mood
-          MOOD_PROMPT="Dựa trên các commit sau, hãy đặt một cái tên 'chuyên nghiệp, trang trọng' bằng tiếng Việt cho bản build này kèm theo emoji phù hợp (ví dụ: 'Cập nhật Hệ thống 🚀' hoặc 'Cải tiến Hiệu năng 🛠️'). Chỉ trả về cái tên. $([[ -n "$TASK_PREFIX" ]] && echo "Yêu cầu bắt đầu bằng ${TASK_PREFIX}")\n\nCommits:\n$COMMITS"
+          MOOD_PROMPT="Dựa trên các danh sách thay đổi sau, hãy đặt một cái tên 'tóm tắt nội dung chính một cách chuyên nghiệp và trang trọng' bằng tiếng Việt cho bản build này kèm theo emoji phù hợp (ví dụ: 'Hoàn thiện Giao diện và Tối ưu kết nối 🚀'). Tên phải phản ánh được những cải tiến hoặc sửa lỗi quan trọng nhất trong bản build. Chỉ trả về duy nhất cái tên, tối đa 60 ký tự. $([[ -n "$TASK_PREFIX" ]] && echo "Yêu cầu bắt đầu bằng ${TASK_PREFIX}")\n\nDanh sách thay đổi:\n$COMMITS"
           jq -n --arg prompt "$MOOD_PROMPT" '{contents: [{parts: [{text: $prompt}]}]}' > payload_mood.json
           
           BUILD_MOOD=$(call_gemini "gemini-flash-latest" "payload_mood.json") || \
