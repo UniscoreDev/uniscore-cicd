@@ -578,9 +578,8 @@ jobs:
             -F "wall_of_apps=0")
           
           JOB_ID=$(echo "$UPLOAD_RESPONSE" | jq -r '.job // empty')
-          STATUS_CODE=$(echo "$UPLOAD_RESPONSE" | jq -r '.status // empty')
           
-          if [ -z "$JOB_ID" ] || [ "$STATUS_CODE" != "2000" ]; then
+          if [ -z "$JOB_ID" ]; then
             echo "⚠️ Diawi upload failed. Response: $UPLOAD_RESPONSE"
             exit 0
           fi
