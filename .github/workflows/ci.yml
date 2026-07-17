@@ -559,6 +559,57 @@ jobs:
             echo "N/A" > ../build_size.txt
           fi
 
+      - name: Upload to Diawi
+        if: ${{ matrix.format == 'APK' && success() }}
+        env:
+          DIAWI_TOKEN: ${{ secrets.DIAWI_TOKEN }}
+        run: |
+          APK_PATH=$(find uniscore-mobile/android/app/build/outputs -name "*.apk" | head -n 1)
+          if [ -z "$APK_PATH" ]; then
+            echo "⚠️ No APK found to upload to Diawi"
+            exit 0
+          fi
+          
+          echo "📤 Uploading $APK_PATH to Diawi..."
+          UPLOAD_RESPONSE=$(curl -s -X POST https://upload.diawi.com/ \
+            -F "token=${DIAWI_TOKEN}" \
+            -F "file=@${APK_PATH}" \
+            -F "find_by_udid=0" \
+            -F "wall_of_apps=0")
+          
+          JOB_ID=$(echo "$UPLOAD_RESPONSE" | jq -r '.job // empty')
+          STATUS_CODE=$(echo "$UPLOAD_RESPONSE" | jq -r '.status // empty')
+          
+          if [ -z "$JOB_ID" ] || [ "$STATUS_CODE" != "2000" ]; then
+            echo "⚠️ Diawi upload failed. Response: $UPLOAD_RESPONSE"
+            exit 0
+          fi
+          
+          echo "🔄 Uploaded successfully. Job ID: $JOB_ID. Polling for link..."
+          for i in {1..30}; do
+            sleep 5
+            STATUS_RESPONSE=$(curl -s "https://upload.diawi.com/status?token=${DIAWI_TOKEN}&job=${JOB_ID}")
+            STATUS=$(echo "$STATUS_RESPONSE" | jq -r '.status // empty')
+            
+            if [ "$STATUS" = "2000" ]; then
+              DIAWI_LINK=$(echo "$STATUS_RESPONSE" | jq -r '.link // empty')
+              DIAWI_QR=$(echo "$STATUS_RESPONSE" | jq -r '.qrcode // empty')
+              echo "✅ Diawi Link: $DIAWI_LINK"
+              echo "✅ Diawi QR: $DIAWI_QR"
+              echo "DIAWI_LINK=$DIAWI_LINK" >> $GITHUB_ENV
+              echo "DIAWI_QR=$DIAWI_QR" >> $GITHUB_ENV
+              exit 0
+            elif [ "$STATUS" = "4000" ]; then
+              ERR_MSG=$(echo "$STATUS_RESPONSE" | jq -r '.message // "Unknown error"')
+              echo "⚠️ Diawi processing failed: $ERR_MSG"
+              exit 0
+            fi
+            echo "⏳ Still processing... ($i/30)"
+          done
+          
+          echo "⚠️ Timeout waiting for Diawi link"
+          exit 0
+
       - name: Send telegram message for iOS
         if: ${{ matrix.platform == 'IOS' && success() }}
         run: |
@@ -572,11 +623,24 @@ jobs:
       - name: Send telegram message for Android
         if: ${{ matrix.platform == 'ANDROID' && success() }}
         run: |
-          MESSAGE="✅ <b>Build thành công ${{ matrix.format }} rồi hàng đã có trên App Distribution:</b>\n${{ needs.init.outputs.message-information }}"
+          PREVIEW_LINK=""
+          if [[ -n "$DIAWI_QR" ]]; then
+            # Zero-width space link to show the QR code image preview in Telegram
+            PREVIEW_LINK="<a href=\"$DIAWI_QR\">&#8205;</a>"
+          fi
+          
+          MESSAGE="${PREVIEW_LINK}✅ <b>Build thành công ${{ matrix.format }} rồi hàng đã có trên App Distribution:</b>\n${{ needs.init.outputs.message-information }}"
+          if [[ -n "$DIAWI_LINK" ]]; then
+            MESSAGE="$MESSAGE\n\n🔗 <b>Diawi Link:</b> <a href=\"$DIAWI_LINK\">Cài đặt trực tiếp qua Diawi</a>"
+          fi
+          if [[ -n "$DIAWI_QR" ]]; then
+            MESSAGE="$MESSAGE\n📷 <b>Mã QR:</b> <a href=\"$DIAWI_QR\">Quét để tải nhanh</a>"
+          fi
+          
           jq -n --arg chat_id "${TELEGRAM_GROUP_ID}" \
                 --arg thread_id "${TELEGRAM_TOPIC_ID}" \
                 --arg text "$(echo -e "$MESSAGE")" \
-                '{chat_id: $chat_id, message_thread_id: $thread_id, text: $text, parse_mode: "HTML", disable_web_page_preview: true}' > payload_android.json
+                '{chat_id: $chat_id, message_thread_id: $thread_id, text: $text, parse_mode: "HTML", disable_web_page_preview: false}' > payload_android.json
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" -H "Content-Type: application/json" -d @payload_android.json
 
       # Combined "What's New" notification is sent by 'notify' job after all platforms complete
