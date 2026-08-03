@@ -385,7 +385,6 @@ jobs:
         working-directory: uniscore-mobile/ios
         run: |
           rm -rf Pods
-          rm -rf Podfile.lock
           pod cache clean --all
       - name: Cache node_modules
         id: cache-node-modules
