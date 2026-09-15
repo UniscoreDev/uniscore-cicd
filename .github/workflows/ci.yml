@@ -362,6 +362,8 @@ jobs:
       - name: Setup Android SDK
         if: matrix.platform == 'ANDROID'
         uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools cmdline-tools;latest'
 
       - name: Setup Android NDK
         uses: nttld/setup-ndk@v1
