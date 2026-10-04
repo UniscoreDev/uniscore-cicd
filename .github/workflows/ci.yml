@@ -52,20 +52,19 @@ jobs:
         run: |
           MATRIX="[{\"format\":\"IPA\",\"name\":\"macos-26\",\"platform\":\"IOS\"},{\"format\":\"APK\",\"name\":\"ubuntu-22.04\",\"platform\":\"ANDROID\"}]"
           if [[ "$REF_NAME" =~ "prod" ]]; then
-            MATRIX="[{\"format\":\"IPA\",\"name\":\"macos-26\",\"platform\":\"IOS\"},{\"format\":\"APK\",\"name\":\"ubuntu-22.04\",\"platform\":\"ANDROID\"},{\"format\":\"AAB\",\"name\":\"ubuntu-22.04\",\"platform\":\"ANDROID\"}]"
+            MATRIX="[{\"format\":\"IPA\",\"name\":\"macos-26\",\"platform\":\"IOS\"},{\"format\":\"AAB\",\"name\":\"ubuntu-22.04\",\"platform\":\"ANDROID\"}]"
           fi
           echo "value=$MATRIX" >> $GITHUB_OUTPUT
 
       - name: Set env
         id: set-env
         run: |
-          ENV='dev'
-          if [[ "$REF_NAME" =~ "prod" ]]; then
-            ENV='prod'
-          elif [[ "$REF_NAME" =~ "stag" ]]; then
-            ENV='stag'
-          elif [[ "$REF_NAME" =~ "beta" ]]; then
-            ENV='beta'
+          # Tag format v<version>-<env>+<build>; an unknown suffix fails instead of silently building dev
+          if [[ "$REF_NAME" =~ -(dev|stag|beta|prod)\+[0-9]+$ ]]; then
+            ENV="${BASH_REMATCH[1]}"
+          else
+            echo "::error::Tag '$REF_NAME' must be v<version>-<dev|stag|beta|prod>+<build>"
+            exit 1
           fi
           echo "value=$ENV" >> $GITHUB_OUTPUT
 
@@ -496,10 +495,32 @@ jobs:
         if: ${{matrix.format == 'APK' && needs.init.outputs.env == 'beta'}}
         working-directory: uniscore-mobile
         run: yarn build:beta:apk
-      - name: Build APK Production
-        if: ${{matrix.format == 'APK' && needs.init.outputs.env == 'prod'}}
+      - name: Decode Android upload keystore
+        if: ${{ matrix.format == 'AAB' && needs.init.outputs.env == 'prod' }}
+        env:
+          ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+        run: |
+          echo "$ANDROID_UPLOAD_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/upload.keystore"
+          echo "ANDROID_UPLOAD_STORE_FILE=$RUNNER_TEMP/upload.keystore" >> "$GITHUB_ENV"
+      # versionCode continues from Play (highest on any track + 1), e.g. 329 → 330
+      - name: Set versionCode from Google Play
+        if: ${{ matrix.format == 'AAB' && needs.init.outputs.env == 'prod' }}
         working-directory: uniscore-mobile
-        run: yarn build:prod:apk
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          bundle exec fastlane android prod_next_version_code
+          CODE=$(cat android_version_code.txt)
+          perl -i -pe "s/^\s*versionCode\s*\d*$/'        versionCode ${CODE}'/e" android/app/build.gradle
+          grep -nE "^\s*version(Code|Name)" android/app/build.gradle
+      - name: Build AAB Production
+        if: ${{ matrix.format == 'AAB' && needs.init.outputs.env == 'prod' }}
+        working-directory: uniscore-mobile
+        env:
+          ANDROID_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_STORE_PASSWORD }}
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+        run: yarn build:prod:aab
       #  Push to testflight
       - name: Push to testflight dev
         if: ${{ matrix.format == 'IPA' && needs.init.outputs.env == 'dev' }}
@@ -535,6 +556,14 @@ jobs:
         if: ${{ matrix.format == 'APK' && needs.init.outputs.env == 'beta' }}
         working-directory: uniscore-mobile
         run: bundle exec fastlane android beta
+
+      # Prod: internal testing track only; the lane never touches production
+      - name: Upload AAB to Google Play internal testing
+        if: ${{ matrix.format == 'AAB' && needs.init.outputs.env == 'prod' }}
+        working-directory: uniscore-mobile
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: bundle exec fastlane android prod_internal
 
       - name: Calculate Build Stats
         if: ${{ success() }}
@@ -629,7 +658,9 @@ jobs:
             PREVIEW_LINK="<a href=\"$DIAWI_QR\">&#8205;</a>"
           fi
           
-          MESSAGE="${PREVIEW_LINK}✅ <b>Build thành công ${{ matrix.format }} rồi hàng đã có trên App Distribution:</b>\n${{ needs.init.outputs.message-information }}"
+          DESTINATION="App Distribution"
+          [[ "${{ matrix.format }}" == "AAB" ]] && DESTINATION="CH Play Internal testing"
+          MESSAGE="${PREVIEW_LINK}✅ <b>Build thành công ${{ matrix.format }} rồi hàng đã có trên ${DESTINATION}:</b>\n${{ needs.init.outputs.message-information }}"
           if [[ -n "$DIAWI_LINK" ]]; then
             MESSAGE="$MESSAGE\n\n🔗 <b>Diawi Link:</b> <a href=\"$DIAWI_LINK\">Cài đặt trực tiếp qua Diawi</a>"
           fi
@@ -826,6 +857,9 @@ jobs:
             echo ""
             echo -e "${VERSION_INFO_ESCAPED}"
             echo "🌍 <b>Môi trường:</b> ${ENV_EMOJI}"
+            if [[ "$ENV" == "prod" ]]; then
+              echo "📍 <b>Nơi nhận:</b> Android → CH Play Internal testing · iOS → TestFlight (tester)"
+            fi
             echo "🕐 <b>Thời gian:</b> ${BUILD_TIME}"
             # Thêm dòng này để hiện link Docs vào bản tin tổng kết
             if [[ -n "${{ github.event.inputs.docs_url }}" ]]; then
