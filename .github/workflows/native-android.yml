@@ -223,7 +223,7 @@ jobs:
               FILE="$RN_APP/debug.keystore" SP=android ALIAS=androiddebugkey KP=android ;;
           esac
           [[ -s "$FILE" && -n "$SP" && -n "$ALIAS" ]] || { echo "::error::Thiếu keystore cho $ENV"; exit 1; }
-          echo "::add-mask::$SP"; echo "::add-mask::$KP"
+          [[ "$ENV" == stag ]] && { echo "::add-mask::$SP"; echo "::add-mask::$KP"; }
           {
             echo "SIGN_STORE_FILE=$FILE"
             echo "SIGN_STORE_PASSWORD=$SP"
@@ -235,7 +235,10 @@ jobs:
         working-directory: uniscore-kotlin
         run: |
           TASK=":app:assemble${FLAVOR}Release"; [[ "$FORMAT" == AAB ]] && TASK=":app:bundle${FLAVOR}Release"
-          ./gradlew "$TASK" -PreleaseDomains=true \
+          # gradle.properties của repo để -Xmx4g → R8 (minify) hết heap (26/10). Runner 16GB: Gradle 8g + Kotlin daemon 3g,
+          # bớt worker song song để không tranh RAM.
+          ./gradlew "$TASK" -PreleaseDomains=true --max-workers=4 \
+            -Dorg.gradle.jvmargs="-Xmx8g -XX:MaxMetaspaceSize=1536m -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8" \
             -Pandroid.injected.signing.store.file="$SIGN_STORE_FILE" \
             -Pandroid.injected.signing.store.password="$SIGN_STORE_PASSWORD" \
             -Pandroid.injected.signing.key.alias="$SIGN_KEY_ALIAS" \
