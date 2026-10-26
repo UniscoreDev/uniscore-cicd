@@ -15,6 +15,10 @@ on:
         description: "The documentation URL to include in the notification"
         required: false
         default: ""
+      platform:
+        description: "Nền tảng build: ios | android | both (Android chính thức build ở native-android.yml từ repo Kotlin)"
+        required: false
+        default: "ios"
   push:
     tags:
       - v*
@@ -23,6 +27,7 @@ env:
   LANG: en_US.UTF-8
   REF_NAME: ${{ github.event.inputs.ref_name }}
   COMMITTER_NAME: ${{ github.event.inputs.committer_name }}
+  PLATFORM: ${{ github.event.inputs.platform || 'ios' }}
   P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
   GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
   MAIN_REPO: ${{ secrets.MAIN_REPO }}
@@ -50,10 +55,17 @@ jobs:
       - name: Set matrix
         id: set-matrix
         run: |
-          MATRIX="[{\"format\":\"IPA\",\"name\":\"macos-26\",\"platform\":\"IOS\"},{\"format\":\"APK\",\"name\":\"ubuntu-22.04\",\"platform\":\"ANDROID\"}]"
-          if [[ "$REF_NAME" =~ "prod" ]]; then
-            MATRIX="[{\"format\":\"IPA\",\"name\":\"macos-26\",\"platform\":\"IOS\"},{\"format\":\"AAB\",\"name\":\"ubuntu-22.04\",\"platform\":\"ANDROID\"}]"
-          fi
+          # Mặc định chỉ iOS; Android RN chỉ build khi chọn platform android/both (yarn deploy hỏi nền tảng)
+          IOS="{\"format\":\"IPA\",\"name\":\"macos-26\",\"platform\":\"IOS\"}"
+          ANDROID_FORMAT=APK
+          [[ "$REF_NAME" =~ "prod" ]] && ANDROID_FORMAT=AAB
+          ANDROID="{\"format\":\"$ANDROID_FORMAT\",\"name\":\"ubuntu-22.04\",\"platform\":\"ANDROID\"}"
+          case "$PLATFORM" in
+            ios) MATRIX="[$IOS]" ;;
+            android) MATRIX="[$ANDROID]" ;;
+            both) MATRIX="[$IOS,$ANDROID]" ;;
+            *) echo "::error::platform '$PLATFORM' phải là ios | android | both"; exit 1 ;;
+          esac
           echo "value=$MATRIX" >> $GITHUB_OUTPUT
 
       - name: Set env
@@ -176,6 +188,7 @@ jobs:
           echo "tag-source: $REF_NAME"
           echo "matrix: ${{ steps.set-matrix.outputs.value }}"
           echo "env: ${{ steps.set-env.outputs.value }}"
+          echo "platform: $PLATFORM"
       - name: Send telegram message
         env:
           MESSAGE: "🎬 <b>Bắt đầu build:</b> ${{ steps.get-message-information.outputs.value }}\n- Thanh niên ấn build 👨‍💻: ${{ env.COMMITTER_NAME || 'Unknown' }}"
@@ -822,15 +835,21 @@ jobs:
             ANDROID_SUCCESS=true
           fi
 
-          if [ "$IOS_SUCCESS" = true ] && [ "$ANDROID_SUCCESS" = true ]; then
-            PLATFORM_MSG="✅ <b>Cả 2 nền tảng đã sẵn sàng</b>"
-          else
-            IOS_STATUS="❌ Thất bại"
-            [ "$IOS_SUCCESS" = true ] && IOS_STATUS="✅ Sẵn sàng"
-            ANDROID_STATUS="❌ Thất bại"
-            [ "$ANDROID_SUCCESS" = true ] && ANDROID_STATUS="✅ Sẵn sàng"
-            PLATFORM_MSG="📱 <b>iOS:</b> ${IOS_STATUS}\n🤖 <b>Android:</b> ${ANDROID_STATUS}"
-          fi
+          IOS_STATUS="❌ Thất bại"
+          [ "$IOS_SUCCESS" = true ] && IOS_STATUS="✅ Sẵn sàng"
+          ANDROID_STATUS="❌ Thất bại"
+          [ "$ANDROID_SUCCESS" = true ] && ANDROID_STATUS="✅ Sẵn sàng"
+          # Chỉ báo nền tảng có build
+          case "$PLATFORM" in
+            ios) PLATFORM_MSG="📱 <b>iOS:</b> ${IOS_STATUS}" ;;
+            android) PLATFORM_MSG="🤖 <b>Android (RN):</b> ${ANDROID_STATUS}" ;;
+            *)
+              if [ "$IOS_SUCCESS" = true ] && [ "$ANDROID_SUCCESS" = true ]; then
+                PLATFORM_MSG="✅ <b>Cả 2 nền tảng đã sẵn sàng</b>"
+              else
+                PLATFORM_MSG="📱 <b>iOS:</b> ${IOS_STATUS}\n🤖 <b>Android (RN):</b> ${ANDROID_STATUS}"
+              fi ;;
+          esac
 
           # 5. Build complete message
           VERSION_INFO="$RAW_VERSION_INFO"
@@ -858,7 +877,11 @@ jobs:
             echo -e "${VERSION_INFO_ESCAPED}"
             echo "🌍 <b>Môi trường:</b> ${ENV_EMOJI}"
             if [[ "$ENV" == "prod" ]]; then
-              echo "📍 <b>Nơi nhận:</b> Android → CH Play Internal testing · iOS → TestFlight (tester)"
+              case "$PLATFORM" in
+                ios) echo "📍 <b>Nơi nhận:</b> iOS → TestFlight (tester)" ;;
+                android) echo "📍 <b>Nơi nhận:</b> Android → CH Play Internal testing" ;;
+                *) echo "📍 <b>Nơi nhận:</b> Android → CH Play Internal testing · iOS → TestFlight (tester)" ;;
+              esac
             fi
             echo "🕐 <b>Thời gian:</b> ${BUILD_TIME}"
             # Thêm dòng này để hiện link Docs vào bản tin tổng kết
