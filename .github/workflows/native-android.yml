@@ -62,7 +62,7 @@ jobs:
           LINK_ACTION="https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           echo "env=$ENV" >> $GITHUB_OUTPUT
           echo "format=$FORMAT" >> $GITHUB_OUTPUT
-          echo "info=\n- App: Uniscore Android (Kotlin native).\n- Môi trường: $ENV.\n- Phiên bản: $VERSION ($BUILD).\n- Tag: ${REF_NAME}.\n- Link action: $LINK_ACTION." >> $GITHUB_OUTPUT
+          echo "info=\n- App: Uniscore Android.\n- Môi trường: $ENV.\n- Phiên bản: $VERSION ($BUILD).\n- Tag: ${REF_NAME}.\n- Link action: $LINK_ACTION." >> $GITHUB_OUTPUT
 
       - name: Generate Release Notes & Mood
         id: gen-notes
@@ -75,12 +75,12 @@ jobs:
             local out
             jq -n --arg p "$1" '{contents: [{parts: [{text: $p}]}]}' > payload.json
             for model in gemini-flash-latest gemini-flash-lite-latest; do
-              out=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=$GEMINI_API_KEY" \
+              out=$(curl -s --max-time 30 -X POST "https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=$GEMINI_API_KEY" \
                 -H "Content-Type: application/json" -d @payload.json | jq -r '.candidates[0].content.parts[0].text // empty' 2>/dev/null)
               [[ -n "$out" ]] && { echo "$out"; return; }
             done
             jq -n --arg p "$1" '{model: "llama-3.3-70b-versatile", messages: [{role: "user", content: $p}], temperature: 0.7}' > payload.json
-            curl -s -X POST "https://api.groq.com/openai/v1/chat/completions" -H "Authorization: Bearer $GROQ_API_KEY" \
+            curl -s --max-time 30 -X POST "https://api.groq.com/openai/v1/chat/completions" -H "Authorization: Bearer $GROQ_API_KEY" \
               -H "Content-Type: application/json" -d @payload.json | jq -r '.choices[0].message.content // empty' 2>/dev/null
           }
 
@@ -99,7 +99,7 @@ jobs:
 
       - name: Send telegram message
         env:
-          MESSAGE: "🎬 <b>Bắt đầu build 🤖 Android · Kotlin:</b> ${{ steps.set-env.outputs.info }}\n- Thanh niên ấn build 👨‍💻: ${{ env.COMMITTER_NAME || 'Unknown' }}"
+          MESSAGE: "🎬 <b>Bắt đầu build 🤖 Android:</b> ${{ steps.set-env.outputs.info }}\n- Thanh niên ấn build 👨‍💻: ${{ env.COMMITTER_NAME || 'Unknown' }}"
         run: |
           jq -n --arg chat_id "${TELEGRAM_GROUP_ID}" \
                 --arg thread_id "${TELEGRAM_TOPIC_ID}" \
@@ -147,12 +147,16 @@ jobs:
       - name: Setup Gradle (cache)
         uses: gradle/actions/setup-gradle@v4
 
+      # Không dùng bundler-cache: Gemfile.lock của RN đang lệch Gemfile → chế độ frozen của cache báo lỗi.
+      # Cài thường như ci.yml của RN (bundle install tự cập nhật lock trên runner).
       - name: Setup ruby (fastlane của repo RN)
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.3.4"
-          bundler-cache: true
-          working-directory: uniscore-mobile
+
+      - name: Bundle install
+        working-directory: uniscore-mobile
+        run: bundle install --jobs 4
 
       - name: Prepare config (.env, release notes)
         env:
@@ -299,7 +303,7 @@ jobs:
         run: |
           DESTINATION="App Distribution"; [[ "$FORMAT" == AAB ]] && DESTINATION="CH Play Internal testing"
           PREVIEW=""; [[ -n "$DIAWI_QR" ]] && PREVIEW="<a href=\"$DIAWI_QR\">&#8205;</a>"
-          MESSAGE="${PREVIEW}✅ <b>Build thành công ${FORMAT} 🤖 Android · Kotlin rồi hàng đã có trên ${DESTINATION}:</b>\n${{ needs.init.outputs.message-information }}\n- versionCode: ${VERSION_CODE} · ${BUILD_SIZE} · ${BUILD_DURATION}"
+          MESSAGE="${PREVIEW}✅ <b>Build thành công ${FORMAT} 🤖 Android rồi hàng đã có trên ${DESTINATION}:</b>\n${{ needs.init.outputs.message-information }}\n- versionCode: ${VERSION_CODE} · ${BUILD_SIZE} · ${BUILD_DURATION}"
           [[ -n "$DIAWI_LINK" ]] && MESSAGE="$MESSAGE\n\n🔗 <b>Diawi Link:</b> <a href=\"$DIAWI_LINK\">Cài đặt trực tiếp qua Diawi</a>"
           jq -n --arg chat_id "${TELEGRAM_GROUP_ID}" --arg thread_id "${TELEGRAM_TOPIC_ID}" --arg text "$(echo -e "$MESSAGE")" \
             '{chat_id: $chat_id, message_thread_id: $thread_id, text: $text, parse_mode: "HTML", disable_web_page_preview: false}' > payload.json
@@ -313,7 +317,7 @@ jobs:
           STEP=$(gh run view ${{ github.run_id }} --json jobs -R ${{ github.repository }} \
             | jq -r '[.jobs[] | select(.name | startswith("Deployment")) | .steps[] | select(.conclusion == "failure") | .name][0] // "?"')
           STEP=$(echo "$STEP" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
-          MESSAGE="💥 <b>Build thất bại:</b> ${FORMAT} (🤖 Android · Kotlin)\n${{ needs.init.outputs.message-information }}\n\n❌ <b>Bước lỗi:</b> ${STEP}\n🔗 Xem chi tiết: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          MESSAGE="💥 <b>Build thất bại:</b> ${FORMAT} (🤖 Android)\n${{ needs.init.outputs.message-information }}\n\n❌ <b>Bước lỗi:</b> ${STEP}\n🔗 Xem chi tiết: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           jq -n --arg chat_id "${TELEGRAM_GROUP_ID}" --arg thread_id "${TELEGRAM_TOPIC_ID}" --arg text "$(echo -e "$MESSAGE")" \
             '{chat_id: $chat_id, message_thread_id: $thread_id, text: $text, parse_mode: "HTML", disable_web_page_preview: true}' > payload.json
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" -H "Content-Type: application/json" -d @payload.json
@@ -344,7 +348,7 @@ jobs:
             echo "TELEGRAM_MESSAGE<<EOF"
             echo "🎉 <b>${MOOD}</b>"
             echo ""
-            echo "🤖 <b>Android (Kotlin):</b> ${STATUS}"
+            echo "🤖 <b>Android:</b> ${STATUS}"
             echo ""
             echo -e "$(echo "$RAW_VERSION_INFO" | esc)"
             echo "🌍 <b>Môi trường:</b> ${ENV_LABEL}"
