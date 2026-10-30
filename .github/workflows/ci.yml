@@ -602,6 +602,19 @@ jobs:
             echo "N/A" > ../build_size.txt
           fi
 
+      - name: Upload build artifact
+        if: ${{ success() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: uniscore-${{ needs.init.outputs.env }}-${{ github.run_number }}-${{ matrix.format }}
+          path: |
+            uniscore-mobile/ios/build/ipa/*.ipa
+            uniscore-mobile/android/app/build/outputs/**/*.apk
+            uniscore-mobile/android/app/build/outputs/**/*.aab
+          retention-days: 2
+          compression-level: 0
+
       - name: Upload to Diawi
         if: ${{ matrix.format == 'APK' && success() }}
         env:
@@ -867,6 +880,14 @@ jobs:
           esac
           
           BUILD_TIME=$(TZ='Asia/Ho_Chi_Minh' date '+%d/%m/%Y %H:%M')
+          # Dòng cuối: link file build (artifact giữ 2 ngày)
+          ARTIFACTS=$(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts" \
+            --jq '.artifacts[] | select(.name | startswith("uniscore-")) | "\(.id) \(.name) \(.size_in_bytes)"' 2>/dev/null || true)
+          FILES_MSG=""
+          while read -r ID NAME SIZE; do
+            [[ -n "$ID" ]] || continue
+            FILES_MSG="$FILES_MSG <a href=\"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/$ID\">${NAME##*-} ($((SIZE / 1024 / 1024))MB)</a>"
+          done <<< "$ARTIFACTS"
           
           {
             echo "TELEGRAM_MESSAGE<<EOF"
@@ -892,6 +913,7 @@ jobs:
             echo ""
             echo "📝 <b>Có gì mới:</b>"
             echo "${RELEASE_NOTES}"
+            [[ -n "$FILES_MSG" ]] && echo -e "\n📦 <b>File build:</b>${FILES_MSG}"
             echo "EOF"
           } >> $GITHUB_ENV
 
