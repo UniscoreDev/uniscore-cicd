@@ -280,6 +280,16 @@ jobs:
           echo "BUILD_DURATION=$((DURATION / 60))m $((DURATION % 60))s" >> $GITHUB_ENV
           echo "BUILD_SIZE=$(du -sh "$ARTIFACT_PATH" | cut -f1)" >> $GITHUB_ENV
 
+      - name: Upload build artifact
+        if: ${{ success() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: uniscore-kotlin-${{ env.ENV }}-${{ github.run_number }}-${{ env.FORMAT }}
+          path: ${{ env.ARTIFACT_PATH }}
+          retention-days: 2
+          compression-level: 0
+
       - name: Upload to Diawi
         if: ${{ env.FORMAT == 'APK' && success() }}
         env:
@@ -338,6 +348,7 @@ jobs:
           RAW_VERSION_INFO: ${{ needs.init.outputs.message-information }}
           DEPLOY_RESULT: ${{ needs.deploy.result }}
           ENV: ${{ needs.init.outputs.env }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           esc() { sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/\"/\&quot;/g'; }
           NOTES=$(echo "$RAW_RELEASE_NOTES" | esc); NOTES="${NOTES:0:1500}"
@@ -347,6 +358,14 @@ jobs:
             dev) ENV_LABEL="🛠️ Development" ;; stag) ENV_LABEL="🧪 Staging" ;;
             beta) ENV_LABEL="🎯 Beta" ;; prod) ENV_LABEL="🚀 Production" ;; *) ENV_LABEL="📦 $ENV" ;;
           esac
+          # Dòng cuối: link file build (artifact giữ 2 ngày)
+          ARTIFACTS=$(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts" \
+            --jq '.artifacts[] | select(.name | startswith("uniscore-")) | "\(.id) \(.name) \(.size_in_bytes)"' 2>/dev/null || true)
+          FILES_MSG=""
+          while read -r ID NAME SIZE; do
+            [[ -n "$ID" ]] || continue
+            FILES_MSG="$FILES_MSG <a href=\"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/$ID\">${NAME##*-} ($((SIZE / 1024 / 1024))MB)</a>"
+          done <<< "$ARTIFACTS"
           {
             echo "TELEGRAM_MESSAGE<<EOF"
             echo "🎉 <b>${MOOD}</b>"
@@ -360,6 +379,7 @@ jobs:
             echo ""
             echo "📝 <b>Có gì mới:</b>"
             echo "${NOTES}"
+            [[ -n "$FILES_MSG" ]] && echo -e "\n📦 <b>File build:</b>${FILES_MSG}"
             echo "EOF"
           } >> $GITHUB_ENV
 
