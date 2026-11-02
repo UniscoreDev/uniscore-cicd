@@ -56,7 +56,14 @@ jobs:
         id: set-matrix
         run: |
           # Mặc định chỉ iOS; Android RN chỉ build khi chọn platform android/both (yarn deploy hỏi nền tảng)
-          IOS="{\"format\":\"IPA\",\"name\":\"macos-26\",\"platform\":\"IOS\"}"
+          # Nhánh có UIScene (bản iPhone Duo) phải build bằng SDK iOS 27, SDK 26 làm app chạy chế độ tương thích trên máy Duo
+          if grep -rqs --include=Info.plist UIApplicationSceneManifest uniscore-mobile/ios; then
+            IOS_RUNNER=xcode-27; XCODE=27.2
+          else
+            IOS_RUNNER=macos-26; XCODE=26.2
+          fi
+          echo "iOS runner: $IOS_RUNNER, Xcode $XCODE"
+          IOS="{\"format\":\"IPA\",\"name\":\"$IOS_RUNNER\",\"platform\":\"IOS\",\"xcode\":\"$XCODE\"}"
           ANDROID_FORMAT=APK
           [[ "$REF_NAME" =~ "prod" ]] && ANDROID_FORMAT=AAB
           ANDROID="{\"format\":\"$ANDROID_FORMAT\",\"name\":\"ubuntu-22.04\",\"platform\":\"ANDROID\"}"
@@ -391,9 +398,9 @@ jobs:
 
       - name: Select Xcode
         if: matrix.platform == 'IOS'
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: "26.2"
+        run: |
+          sudo xcode-select -s "/Applications/Xcode_${{ matrix.xcode }}.app"
+          xcodebuild -version
       - name: Clean Pods
         if: matrix.platform == 'IOS'
         working-directory: uniscore-mobile/ios
