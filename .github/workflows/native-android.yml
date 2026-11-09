@@ -114,6 +114,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: [init]
     timeout-minutes: 75
+    outputs:
+      play-stag: ${{ steps.play_stag.outcome }}
     env:
       ENV: ${{ needs.init.outputs.env }}
       FORMAT: ${{ needs.init.outputs.format }}
@@ -235,9 +237,11 @@ jobs:
         working-directory: uniscore-kotlin
         run: |
           TASK=":app:assemble${FLAVOR}Release"; [[ "$FORMAT" == AAB ]] && TASK=":app:bundle${FLAVOR}Release"
+          # Staging: APK cho Firebase + AAB cho Google Play internal (app riêng com.unity.uniscore.stag)
+          EXTRA_TASK=""; [[ "$ENV" == stag ]] && EXTRA_TASK=":app:bundle${FLAVOR}Release"
           # gradle.properties của repo để -Xmx4g → R8 (minify) hết heap (26/10). Runner 16GB: Gradle 8g + Kotlin daemon 3g,
           # bớt worker song song để không tranh RAM.
-          ./gradlew "$TASK" -PreleaseDomains=true --max-workers=4 \
+          ./gradlew "$TASK" $EXTRA_TASK -PreleaseDomains=true --max-workers=4 \
             -Dorg.gradle.jvmargs="-Xmx8g -XX:MaxMetaspaceSize=1536m -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8" \
             -Pandroid.injected.signing.store.file="$SIGN_STORE_FILE" \
             -Pandroid.injected.signing.store.password="$SIGN_STORE_PASSWORD" \
@@ -273,6 +277,31 @@ jobs:
           PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
         run: bundle exec fastlane android prod_internal
 
+      # Staging: thêm AAB lên Google Play internal testing của app staging (com.unity.uniscore.stag).
+      # Lỗi ở đây không chặn bản Firebase; kết quả hiện trong tin nhắn Telegram.
+      # Play API không nhận bản đầu tiên của app: bản đầu phải upload tay trên Play Console.
+      - name: Upload staging AAB to Google Play internal testing
+        id: play_stag
+        if: env.ENV == 'stag'
+        continue-on-error: true
+        working-directory: uniscore-mobile
+        # Tham số qua env SUPPLY_* (fastlane run tách key:value theo dấu ':' → JSON key bị vỡ)
+        env:
+          SUPPLY_JSON_KEY_DATA: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          SUPPLY_PACKAGE_NAME: com.unity.uniscore.stag
+          SUPPLY_AAB: ${{ github.workspace }}/uniscore-kotlin/app/build/outputs/bundle/stagingRelease/app-staging-release.aab
+          SUPPLY_TRACK: internal
+          SUPPLY_RELEASE_STATUS: completed
+          SUPPLY_SKIP_UPLOAD_METADATA: "true"
+          SUPPLY_SKIP_UPLOAD_CHANGELOGS: "true"
+          SUPPLY_SKIP_UPLOAD_IMAGES: "true"
+          SUPPLY_SKIP_UPLOAD_SCREENSHOTS: "true"
+          SUPPLY_TIMEOUT: "600"
+        run: |
+          [[ -s "$SUPPLY_AAB" ]] || { echo "::error::Không thấy $SUPPLY_AAB"; exit 1; }
+          # Tên release "26110901 (26.11.09)" giống bản prod
+          SUPPLY_VERSION_NAME="$VERSION_CODE ($VERSION_NAME)" bundle exec fastlane run upload_to_play_store
+
       - name: Calculate Build Stats
         if: ${{ success() }}
         run: |
@@ -287,6 +316,17 @@ jobs:
         with:
           name: uniscore-kotlin-${{ env.ENV }}-${{ github.run_number }}-${{ env.FORMAT }}
           path: ${{ env.ARTIFACT_PATH }}
+          retention-days: 2
+          compression-level: 0
+
+      # Staging AAB (giữ 2 ngày) — dùng cho lần upload tay đầu tiên lên Play Console
+      - name: Upload staging AAB artifact
+        if: ${{ env.ENV == 'stag' && success() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: uniscore-kotlin-stag-${{ github.run_number }}-AAB
+          path: uniscore-kotlin/app/build/outputs/bundle/stagingRelease/app-staging-release.aab
           retention-days: 2
           compression-level: 0
 
@@ -347,6 +387,7 @@ jobs:
           RAW_BUILD_MOOD: ${{ needs.init.outputs.build-mood }}
           RAW_VERSION_INFO: ${{ needs.init.outputs.message-information }}
           DEPLOY_RESULT: ${{ needs.deploy.result }}
+          PLAY_STAG: ${{ needs.deploy.outputs.play-stag }}
           ENV: ${{ needs.init.outputs.env }}
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -375,6 +416,11 @@ jobs:
             echo -e "$(echo "$RAW_VERSION_INFO" | esc)"
             echo "🌍 <b>Môi trường:</b> ${ENV_LABEL}"
             [[ "$ENV" == prod ]] && echo "📍 <b>Nơi nhận:</b> CH Play Internal testing"
+            if [[ "$ENV" == stag ]]; then
+              PLAY_LABEL="❌ lỗi"; [[ "$PLAY_STAG" == success ]] && PLAY_LABEL="✅"
+              [[ -z "$PLAY_STAG" || "$PLAY_STAG" == skipped ]] && PLAY_LABEL="⏭️ bỏ qua"
+              echo "📍 <b>Nơi nhận:</b> Firebase App Distribution + CH Play Internal staging (${PLAY_LABEL})"
+            fi
             echo "🕐 <b>Thời gian:</b> $(TZ='Asia/Ho_Chi_Minh' date '+%d/%m/%Y %H:%M')"
             echo ""
             echo "📝 <b>Có gì mới:</b>"
