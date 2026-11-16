@@ -113,7 +113,7 @@ jobs:
     name: Deployment ${{ needs.init.outputs.format }} (Kotlin)
     runs-on: ubuntu-24.04   # ghim 24.04: trên ubuntu-26.04 (ubuntu-latest mới) bước Build APK làm runner mất kết nối (16/11)
     needs: [init]
-    timeout-minutes: 75
+    timeout-minutes: 90
     outputs:
       play-stag: ${{ steps.play_stag.outcome }}
     env:
@@ -133,6 +133,14 @@ jobs:
           large-packages: true
           docker-images: true
           swap-storage: false
+
+      # Build release (R8) + Kotlin daemon sát trần 16GB của runner: 16/11 runner "lost communication" 2 lần ở bước Build.
+      # Thêm swap để thiếu RAM thì chậm lại chứ runner không chết.
+      - name: Add swap (8GB)
+        run: |
+          SWAP=/mnt/swapfile-build; [ -d /mnt ] || SWAP=/swapfile-build
+          sudo fallocate -l 8G "$SWAP" && sudo chmod 600 "$SWAP" && sudo mkswap "$SWAP" && sudo swapon "$SWAP"
+          free -h; df -h / /mnt 2>/dev/null || true
 
       - name: Clone repositories
         run: |
@@ -235,13 +243,29 @@ jobs:
 
       - name: Build ${{ needs.init.outputs.format }}
         working-directory: uniscore-kotlin
+        timeout-minutes: 60   # treo thì bước này hết giờ (log còn nguyên) thay vì runner chết ở timeout của job
         run: |
+          # Theo dõi RAM / swap / ổ đĩa mỗi 30 giây. Sắp cạn (RAM trống + swap trống < 700MB) thì dừng Gradle để bước này
+          # fail bình thường và còn log — runner chết thì mất hết log, không biết nguyên nhân.
+          (
+            while sleep 30; do
+              AVAIL=$(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo); SWAPFREE=$(awk '/SwapFree/{print int($2/1024)}' /proc/meminfo)
+              echo "[mem $(date +%H:%M:%S)] RAM trống ${AVAIL}MB · swap trống ${SWAPFREE}MB · ổ đĩa trống $(df -BM --output=avail / | tail -1 | tr -d ' ') · java RSS: $(ps -eo rss,comm --sort=-rss | awk '$2=="java"{printf "%dMB ", $1/1024}' | cut -c1-60)"
+              if (( AVAIL + SWAPFREE < 700 )); then
+                echo "::error::Sắp hết bộ nhớ (RAM trống ${AVAIL}MB + swap trống ${SWAPFREE}MB) — dừng Gradle để giữ log"
+                ps -eo rss,pid,args --sort=-rss | head -8 | cut -c1-220
+                pkill -9 -f 'GradleDaemon|KotlinCompileDaemon|GradleWorkerMain' || true
+                exit 0
+              fi
+            done
+          ) &
+          MONITOR=$!; trap 'kill $MONITOR 2>/dev/null || true' EXIT
           TASK=":app:assemble${FLAVOR}Release"; [[ "$FORMAT" == AAB ]] && TASK=":app:bundle${FLAVOR}Release"
           # Staging: APK cho Firebase + AAB cho Google Play internal (app riêng com.unity.uniscore.stag)
           EXTRA_TASK=""; [[ "$ENV" == stag ]] && EXTRA_TASK=":app:bundle${FLAVOR}Release"
           # gradle.properties của repo để -Xmx4g → R8 (minify) hết heap (26/10). Runner 16GB: Gradle 8g + Kotlin daemon 3g,
-          # bớt worker song song để không tranh RAM.
-          ./gradlew "$TASK" $EXTRA_TASK -PreleaseDomains=true --max-workers=4 \
+          # bớt worker song song để không tranh RAM (16/11: 4 → 2 sau khi runner chết vì cạn tài nguyên).
+          ./gradlew "$TASK" $EXTRA_TASK -PreleaseDomains=true --max-workers=2 \
             -Dorg.gradle.jvmargs="-Xmx8g -XX:MaxMetaspaceSize=1536m -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8" \
             -Pandroid.injected.signing.store.file="$SIGN_STORE_FILE" \
             -Pandroid.injected.signing.store.password="$SIGN_STORE_PASSWORD" \
