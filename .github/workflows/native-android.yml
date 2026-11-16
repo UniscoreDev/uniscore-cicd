@@ -111,7 +111,7 @@ jobs:
 
   deploy:
     name: Deployment ${{ needs.init.outputs.format }} (Kotlin)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # ghim 24.04: trên ubuntu-26.04 (ubuntu-latest mới) bước Build APK làm runner mất kết nối (16/11)
     needs: [init]
     timeout-minutes: 75
     outputs:
