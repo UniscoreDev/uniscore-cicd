@@ -265,12 +265,24 @@ jobs:
           EXTRA_TASK=""; [[ "$ENV" == stag ]] && EXTRA_TASK=":app:bundle${FLAVOR}Release"
           # gradle.properties của repo để -Xmx4g → R8 (minify) hết heap (26/10). Runner 16GB: Gradle 8g + Kotlin daemon 3g,
           # bớt worker song song để không tranh RAM (16/11: 4 → 2 sau khi runner chết vì cạn tài nguyên).
-          ./gradlew "$TASK" $EXTRA_TASK -PreleaseDomains=true --max-workers=2 \
-            -Dorg.gradle.jvmargs="-Xmx8g -XX:MaxMetaspaceSize=1536m -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8" \
-            -Pandroid.injected.signing.store.file="$SIGN_STORE_FILE" \
-            -Pandroid.injected.signing.store.password="$SIGN_STORE_PASSWORD" \
-            -Pandroid.injected.signing.key.alias="$SIGN_KEY_ALIAS" \
-            -Pandroid.injected.signing.key.password="$SIGN_KEY_PASSWORD"
+          GRADLE_ARGS=(-PreleaseDomains=true --max-workers=2
+            -Dorg.gradle.jvmargs="-Xmx8g -XX:MaxMetaspaceSize=1536m -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8"
+            -Pandroid.injected.signing.store.file="$SIGN_STORE_FILE"
+            -Pandroid.injected.signing.store.password="$SIGN_STORE_PASSWORD"
+            -Pandroid.injected.signing.key.alias="$SIGN_KEY_ALIAS"
+            -Pandroid.injected.signing.key.password="$SIGN_KEY_PASSWORD")
+          # 17/11: runner lại chết ở bước này. Log bản 16/11 cho thấy từ lúc biên dịch :app trở đi Gradle daemon giữ ~11GB
+          # + Kotlin daemon 3GB còn sống → RAM trống <1GB, phần lint/R8 chạy trong swap. Tách 2 pha:
+          # pha 1 biên dịch Kotlin, tắt hết daemon để trả RAM, pha 2 (R8, dex, đóng gói) chạy trên daemon mới.
+          echo "::group::Pha 1 — biên dịch"
+          ./gradlew ":app:compile${FLAVOR}ReleaseKotlin" "${GRADLE_ARGS[@]}"
+          ./gradlew --stop || true
+          pkill -f 'KotlinCompileDaemon' || true
+          sleep 5; free -m
+          echo "::endgroup::"
+          # lintVital ngốn thêm vài GB ngay trước R8 — bỏ ở dev/stag/beta, bản prod vẫn chạy.
+          SKIP_LINT=(); [[ "$ENV" != prod ]] && SKIP_LINT=(-x ":app:lintVital${FLAVOR}Release")
+          ./gradlew "$TASK" $EXTRA_TASK "${SKIP_LINT[@]}" "${GRADLE_ARGS[@]}"
 
       # Lane fastlane của RN đọc file theo đường dẫn android/app/build/outputs/... — chép bản Kotlin vào đúng chỗ đó
       - name: Stage artifact for fastlane
