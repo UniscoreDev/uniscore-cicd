@@ -859,6 +859,12 @@ jobs:
           [ "$IOS_SUCCESS" = true ] && IOS_STATUS="✅ Sẵn sàng"
           ANDROID_STATUS="❌ Thất bại"
           [ "$ANDROID_SUCCESS" = true ] && ANDROID_STATUS="✅ Sẵn sàng"
+          # Có ít nhất một nền tảng được yêu cầu build xong
+          case "$PLATFORM" in
+            ios) BUILD_OK=$IOS_SUCCESS ;;
+            android) BUILD_OK=$ANDROID_SUCCESS ;;
+            *) BUILD_OK=false; { [ "$IOS_SUCCESS" = true ] || [ "$ANDROID_SUCCESS" = true ]; } && BUILD_OK=true ;;
+          esac
           # Chỉ báo nền tảng có build
           case "$PLATFORM" in
             ios) PLATFORM_MSG="📱 <b>iOS:</b> ${IOS_STATUS}" ;;
@@ -917,9 +923,12 @@ jobs:
               DOCS_URL_ENCODED=$(echo "${{ github.event.inputs.docs_url }}" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/\"/\&quot;/g')
               echo "📚 <b>Tài liệu:</b> <a href=\"${DOCS_URL_ENCODED}\">Link tài liệu</a>"
             fi
-            echo ""
-            echo "📝 <b>Có gì mới:</b>"
-            echo "${RELEASE_NOTES}"
+            # Build lỗi thì không ghi "Có gì mới": chưa có bản nào tới tay người test
+            if [[ "$BUILD_OK" == true ]]; then
+              echo ""
+              echo "📝 <b>Có gì mới:</b>"
+              echo "${RELEASE_NOTES}"
+            fi
             [[ -n "$FILES_MSG" ]] && echo -e "\n📦 <b>File build:</b>${FILES_MSG}"
             echo "EOF"
           } >> $GITHUB_ENV
