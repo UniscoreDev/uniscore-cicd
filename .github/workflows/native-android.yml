@@ -458,9 +458,12 @@ jobs:
               echo "📍 <b>Nơi nhận:</b> Firebase App Distribution + CH Play Internal staging (${PLAY_LABEL})"
             fi
             echo "🕐 <b>Thời gian:</b> $(TZ='Asia/Ho_Chi_Minh' date '+%d/%m/%Y %H:%M')"
-            echo ""
-            echo "📝 <b>Có gì mới:</b>"
-            echo "${NOTES}"
+            # Build lỗi thì không ghi "Có gì mới": chưa có bản nào tới tay người test
+            if [[ "$DEPLOY_RESULT" == success ]]; then
+              echo ""
+              echo "📝 <b>Có gì mới:</b>"
+              echo "${NOTES}"
+            fi
             [[ -n "$FILES_MSG" ]] && echo -e "\n📦 <b>File build:</b>${FILES_MSG}"
             echo "EOF"
           } >> $GITHUB_ENV
