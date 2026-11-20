@@ -46,7 +46,8 @@ jobs:
       build-mood: ${{ steps.gen-notes.outputs.mood }}
     steps:
       - name: Clone Kotlin repository
-        run: git clone --depth 30 --branch "$REF_NAME" "https://oauth2:${KOTLIN_GITLAB_TOKEN}@${KOTLIN_REPO}" uniscore-kotlin
+        # Chỉ cần lịch sử commit + tag để viết "Có gì mới" → bare, không tải tree/blob
+        run: git clone --bare --filter=tree:0 "https://oauth2:${KOTLIN_GITLAB_TOKEN}@${KOTLIN_REPO}" uniscore-kotlin
 
       - name: Set env
         id: set-env
@@ -67,9 +68,37 @@ jobs:
       - name: Generate Release Notes & Mood
         id: gen-notes
         working-directory: uniscore-kotlin
+        env:
+          ENV: ${{ steps.set-env.outputs.env }}
         run: |
-          COMMITS=$(git log -n 10 --no-merges --pretty=format:"- %s" || echo "")
-          [[ -z "$COMMITS" ]] && COMMITS="- Cập nhật hệ thống."
+          # Thay đổi = từ tag cùng môi trường gần nhất (khác commit) tới tag này; chưa có tag trước → 15 commit cuối
+          TAG_SHA=$(git rev-list -n 1 "$REF_NAME")
+          PREV=""
+          while read -r t; do
+            if [[ "$t" != "$REF_NAME" && "$(git rev-list -n 1 "$t")" != "$TAG_SHA" ]]; then PREV="$t"; break; fi
+          done < <(git tag --merged "$REF_NAME" --sort=-creatordate -l "v*-${ENV}+*")
+          RANGE="$REF_NAME"; LIMIT=15
+          if [[ -n "$PREV" ]]; then RANGE="$PREV..$REF_NAME"; LIMIT=200; fi
+          echo "Release notes range: $RANGE"
+
+          # Giữ merge nhánh ticket (tên nhánh có mã task + mô tả); bỏ merge đồng bộ và merge nhánh migration/*.
+          # Commit port tự động "migrate React Native → Compose" có subject chung chung → kèm đoạn đầu phần mô tả.
+          SKIP="^Merge (remote-tracking branch|app-[a-z]+ into|branch '(origin/)?(app-|migration/))"
+          COMMITS=""; N=0
+          while read -r h; do
+            s=$(git log -1 --pretty=%s "$h")
+            if [[ "$s" =~ $SKIP ]]; then continue; fi
+            if [[ "$s" == *"migrate React Native"* ]]; then
+              b=$(git log -1 --pretty=%b "$h" | tr -s '\n' ' ')
+              s="$s — ${b:0:600}"
+            fi
+            COMMITS+="- $s"$'\n'; N=$((N + 1))
+            if (( N >= 60 )); then break; fi
+          done < <(git log -n "$LIMIT" --pretty=%H "$RANGE")
+          COMMITS="${COMMITS:0:15000}"
+          if [[ -z "$COMMITS" ]]; then COMMITS="- Cập nhật hệ thống."; fi
+          echo "$COMMITS"
+          RULES="Lưu ý khi đọc danh sách: dòng 'migrate React Native → Compose' là commit port tự động, hãy mô tả thay đổi thực tế nêu trong phần mô tả đi kèm hoặc trong tên nhánh cùng mã task; TUYỆT ĐỐI không nhắc tới React Native, Compose, Jetpack Compose, migrate hay port. Mã task có dạng US-1234, UOB-123, UTD-123 (trong danh sách có thể viết us1234); các mã như bug-359, r6-patch, misc là mã nội bộ, không hiển thị. Gộp các dòng cùng mã task thành một dòng."
 
           ask() { # $1 = prompt; Gemini → Groq, rỗng nếu cả hai lỗi
             local out
@@ -84,9 +113,9 @@ jobs:
               -H "Content-Type: application/json" -d @payload.json | jq -r '.choices[0].message.content // empty' 2>/dev/null
           }
 
-          NOTES=$(ask "Bạn là một AI chuyên nghiệp. Hãy viết bản tóm tắt 'Tính năng mới & Cập nhật' $REF_NAME (app Android) ngắn gọn, súc tích bằng tiếng Việt. Yêu cầu: bắt đầu mỗi dòng bằng dấu gạch đầu dòng (-), nếu thay đổi liên quan đến task thì BẮT BUỘC bắt đầu bằng mã task (ví dụ: - US-1663: Sửa lỗi ...). Tối đa 10 dòng, mỗi dòng không quá 100 ký tự. Không đề cập mã nguồn hay commit. Không dùng markdown phức tạp.\n\nDanh sách thay đổi:\n$COMMITS")
+          NOTES=$(ask "Bạn là một AI chuyên nghiệp. Hãy viết bản tóm tắt 'Tính năng mới & Cập nhật' $REF_NAME (app Android) ngắn gọn, súc tích bằng tiếng Việt. Yêu cầu: bắt đầu mỗi dòng bằng dấu gạch đầu dòng (-), nếu thay đổi liên quan đến task thì BẮT BUỘC bắt đầu bằng mã task (ví dụ: - US-1663: Sửa lỗi ...). Tối đa 10 dòng, mỗi dòng không quá 100 ký tự. Không đề cập mã nguồn hay commit. Không dùng markdown phức tạp. $RULES\n\nDanh sách thay đổi:\n$COMMITS")
           NOTES="${NOTES:-- Cập nhật hệ thống và cải tiến hiệu năng.}"
-          MOOD=$(ask "Dựa trên các danh sách thay đổi sau, hãy đặt một cái tên tóm tắt nội dung chính một cách chuyên nghiệp bằng tiếng Việt cho bản build này kèm emoji phù hợp. Chỉ trả về duy nhất cái tên, tối đa 60 ký tự, không có mã task.\n\nDanh sách thay đổi:\n$COMMITS")
+          MOOD=$(ask "Dựa trên các danh sách thay đổi sau, hãy đặt một cái tên tóm tắt nội dung chính một cách chuyên nghiệp bằng tiếng Việt cho bản build này kèm emoji phù hợp. Chỉ trả về duy nhất cái tên, tối đa 60 ký tự, không có mã task. $RULES\n\nDanh sách thay đổi:\n$COMMITS")
           MOOD="${MOOD:-Cập nhật Uniscore Android 🤖}"
           { echo "notes<<EOF"; echo "$NOTES" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'; echo "EOF"; } >> "$GITHUB_OUTPUT"
           { echo "mood<<EOF"; echo "$MOOD" | head -n 1; echo "EOF"; } >> "$GITHUB_OUTPUT"
